@@ -14,7 +14,7 @@ class ParsedReview:
     text: str
     pub_date: datetime | None
     review_url: str | None
-    media_urls: list[str] | None
+    media_urls: list[str]
 
 
 @dataclass

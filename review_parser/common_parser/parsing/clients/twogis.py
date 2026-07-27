@@ -49,6 +49,7 @@ class TwoGisClient:
 
         response = http_get(url, params=params)
         if response.status_code != 200:
+            # TODO: заменить ошибку на кастомную
             raise Exception(f'Failed to fetch reviews: {response.status_code} - {response.text}')
         return response.json()
 

@@ -152,3 +152,85 @@ class PlaylistIPMapping(models.Model):
     
     def __str__(self):
         return f"{self.ip_address} → Playlist {self.playlist.id} : {self.playlist.title}"
+
+
+# ----------- Новые нормализованные модели ----------
+
+
+class BranchProvider(models.Model):
+    PROVIDER_CHOICES = (
+        ('2gis', '2GIS'),
+        ('vlru', 'VL.RU'),
+        ('yandex', 'Yandex'),
+        ('google', 'Google')
+    )
+
+    branch = models.ForeignKey(
+        Branch,
+        on_delete = models.CASCADE,
+        related_name='branch_providers'
+    )
+    provider = models.CharField(
+        max_length=30,
+        choices=PROVIDER_CHOICES
+    )
+    source_url = models.URLField(max_length=1500)
+    external_place_id = models.CharField(
+        max_length=255,
+        null=True, 
+        blank=True,
+        db_index=True
+    )
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=['branch', 'provider', 'source_url'],
+                name='unique_branch_provider_source_url'
+            )
+        ]
+
+    def __str__(self):
+        return f'{self.branch.pk} : {self.provider}: {self.source_url}'
+
+
+class ProviderStat(models.Model):
+    provider = models.OneToOneField(
+        BranchProvider,
+        on_delete=models.CASCADE,
+        related_name='stats'
+    )
+    external_rating_avg = models.FloatField(
+        null=True, 
+        blank=True
+    )
+    last_parse_date = models.DateTimeField(
+        null=True, 
+        blank=True
+    )
+
+    def __str__(self):
+        return f'Stat for {self.provider}'
+
+
+class ReviewMedia(models.Model):
+    MEDIA_TYPE_CHOICES = (
+        ('photo', 'Фото'),
+        ('video', 'Видео'),
+        ('other', 'Другое')
+    )
+
+    review = models.ForeignKey(
+        Review,
+        on_delete=models.CASCADE,
+        related_name='media'
+    )
+    media_type = models.CharField(
+        max_length=50,
+        choices=MEDIA_TYPE_CHOICES
+    )
+    url = models.URLField(max_length=1500)
+
+    def __str__(self):
+        return f'{self.review.pk}: {self.media_type}: {self.url}'
+    

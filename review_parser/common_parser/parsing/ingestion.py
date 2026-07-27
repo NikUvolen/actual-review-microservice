@@ -1,5 +1,7 @@
 from dataclasses import dataclass
+from hashlib import sha256
 
+from django.db import IntegrityError, transaction
 from django.utils import timezone
 
 from common_parser.models import (
@@ -20,28 +22,33 @@ class IngestionResult:
 
 
 class ReviewIngestionService:
-    def _review_exists(
-        self, 
-        branch: Branch, 
-        provider: str, 
-        parsed_review: ParsedReview
-    ) -> bool:
-        """
-        Check if a review already exists 
-        in the database based on the branch, provider, and external ID.
-        """
-        if parsed_review.review_url:
+    def _make_content_hash(self, parsed_review: ParsedReview) -> str:
+        if parsed_review.external_id:
+            raw_value = f"external:{parsed_review.external_id}"
+        else:
+            published_at = parsed_review.pub_date.isoformat() if parsed_review.pub_date else ""
+            raw_value = "|".join(
+                [
+                    parsed_review.author_name.strip().lower(),
+                    str(parsed_review.rating or ""),
+                    published_at,
+                    parsed_review.text.strip(),
+                    parsed_review.review_url or "",
+                ]
+            )
+
+        return sha256(raw_value.encode("utf-8")).hexdigest()
+
+    def _review_exists(self, branch_provider: BranchProvider, parsed_review: ParsedReview) -> bool:
+        if parsed_review.external_id:
             return Review.objects.filter(
-                branch=branch,
-                provider=provider,
-                review_url=parsed_review.review_url
+                provider=branch_provider,
+                external_review_id=parsed_review.external_id,
             ).exists()
 
         return Review.objects.filter(
-            branch=branch,
-            provider=provider,
-            author=parsed_review.author_name,
-            content=parsed_review.text,
+            provider=branch_provider,
+            content_hash=self._make_content_hash(parsed_review),
         ).exists()
 
     def _create_review_media(self, review: Review, parsed_review: ParsedReview) -> None:
@@ -55,35 +62,6 @@ class ReviewIngestionService:
                 for media_url in parsed_review.media_urls
             ]
         )
-
-    def _update_legacy_branch_stats(self, branch: Branch, result: ParseResult) -> None:
-        update_fields = []
-
-        if result.provider == "2gis":
-            if result.external_count is not None:
-                branch.twogis_review_count = result.external_count
-                update_fields.append("twogis_review_count")
-
-            if result.avg_rating is not None:
-                branch.twogis_review_avg = result.avg_rating
-                update_fields.append("twogis_review_avg")
-
-            branch.twogis_parse_date = timezone.now()
-            update_fields.append("twogis_parse_date")
-
-        elif result.provider == "vlru":
-            branch.vlru_review_count = len(result.reviews)
-            update_fields.append("vlru_review_count")
-
-            if result.avg_rating is not None:
-                branch.vlru_review_avg = result.avg_rating
-                update_fields.append("vlru_review_avg")
-
-            branch.vlru_parse_date = timezone.now()
-            update_fields.append("vlru_parse_date")
-
-        if update_fields:
-            branch.save(update_fields=update_fields)
 
     def _update_provider_stats(self, branch_provider: BranchProvider, result: ParseResult) -> None:
         ProviderStat.objects.update_or_create(
@@ -112,26 +90,29 @@ class ReviewIngestionService:
         branch_provider = self._get_or_create_branch_provider(branch, result)
 
         self._update_provider_stats(branch_provider, result)
-        self._update_legacy_branch_stats(branch, result)
 
         for parsed_review in result.reviews:
-            if self._review_exists(branch, result.provider, parsed_review):
+            if self._review_exists(branch_provider, parsed_review):
                 skipped_count += 1
                 continue
 
-            review = Review.objects.create(
-                branch=branch,
-                author=parsed_review.author_name,
-                avatar=parsed_review.author_avatar_url,
-                rating=parsed_review.rating or 0,
-                content=parsed_review.text,
-                published_date=parsed_review.pub_date or timezone.now(), # TODO: уточнить про None
-                provider=result.provider,
-                photos=','.join(parsed_review.media_urls) if parsed_review.media_urls else '',
-                review_url=parsed_review.review_url,
-            )
-
-            self._create_review_media(review, parsed_review)
+            try:
+                with transaction.atomic():
+                    review = Review.objects.create(
+                        provider=branch_provider,
+                        author_name=parsed_review.author_name,
+                        author_avatar_url=parsed_review.author_avatar_url,
+                        rating=parsed_review.rating,
+                        text=parsed_review.text,
+                        published_date=parsed_review.pub_date,
+                        review_url=parsed_review.review_url,
+                        external_review_id=parsed_review.external_id,
+                        content_hash=self._make_content_hash(parsed_review),
+                    )
+                    self._create_review_media(review, parsed_review)
+            except IntegrityError:
+                skipped_count += 1
+                continue
 
             created_count += 1
 

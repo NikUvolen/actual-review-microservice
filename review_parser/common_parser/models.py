@@ -1,8 +1,4 @@
 from django.db import models
-from django.utils.timezone import now
-from django.db.models.signals import post_save
-from django.dispatch import receiver
-from django.db.transaction import on_commit
 
 class Organization(models.Model):
     name = models.CharField(max_length=255, null=True, blank=True)
@@ -127,7 +123,7 @@ class Review(models.Model):
             models.UniqueConstraint(
                 fields=['provider', 'external_review_id'],
                 condition=models.Q(external_review_id__isnull=False),
-                name='unique_provider_external_review_id_null'
+                name='unique_provider_external_review_id_not_null'
             ),
             models.UniqueConstraint(
                 fields=['provider', 'content_hash'],
@@ -217,7 +213,7 @@ class Video(models.Model):
         blank=True,
         db_index=True
     )
-    url = models.URLField()
+    url = models.URLField(max_length=1500)
     title = models.CharField(
         max_length=255,
         null=True,
@@ -246,7 +242,12 @@ class Video(models.Model):
         constraints = [
             models.UniqueConstraint(
                 fields=['playlist', 'external_id'],
-                name='unique_playlist_external_id'
+                condition=models.Q(external_id__isnull=False),
+                name='unique_playlist_external_id_not_null'
+            ),
+            models.UniqueConstraint(
+                fields=['playlist', 'url'],
+                name='unique_playlist_url'
             )
         ]
 

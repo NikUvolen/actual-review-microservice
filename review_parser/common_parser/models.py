@@ -172,7 +172,11 @@ class Playlist(models.Model):
         on_delete=models.CASCADE,
         related_name="playlists"
     )    
-    title = models.CharField(max_length=255)
+    title = models.CharField(
+        max_length=255,
+        null=True,
+        blank=True
+    )
     provider = models.CharField(
         max_length=50,
         choices=PROVIDER_CHOICES
@@ -214,9 +218,29 @@ class Video(models.Model):
         db_index=True
     )
     url = models.URLField()
-    title = models.CharField(max_length=255)
-    preview_url = models.URLField(max_length=1000)
-    published_date = models.DateTimeField()
+    title = models.CharField(
+        max_length=255,
+        null=True,
+        blank=True
+    )
+    author = models.CharField(
+        max_length=255,
+        null=True,
+        blank=True
+    )
+    duration_seconds = models.PositiveIntegerField(
+        null=True,
+        blank=True
+    )
+    preview_url = models.URLField(
+        max_length=1000,
+        null=True,
+        blank=True
+    )
+    published_date = models.DateTimeField(
+        null=True,
+        blank=True
+    )
 
     class Meta:
         constraints = [

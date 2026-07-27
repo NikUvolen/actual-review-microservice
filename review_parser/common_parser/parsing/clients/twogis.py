@@ -2,6 +2,10 @@ import re
 import os
 
 from common_parser.services.http_client import get as http_get
+from common_parser.parsing.exceptions import (
+    InvalidSourceUrlError,
+    ProviderRequestError,
+)
 
 
 class TwoGisClient:
@@ -22,7 +26,9 @@ class TwoGisClient:
         """
         match = re.search(r'/firm/(\d+)', source_url)
         if not match:
-            raise ValueError('Invalid source URL format. Could not extract firm ID.')
+            raise InvalidSourceUrlError(
+                'Invalid 2GIS source URL format. Could not extract firm ID.'
+            )
         return match.group(1)
 
     def get_reviews_page(self, firm_id: str, limit: int = 50, offset: int = 0) -> dict:
@@ -49,8 +55,11 @@ class TwoGisClient:
 
         response = http_get(url, params=params)
         if response.status_code != 200:
-            # TODO: заменить ошибку на кастомную
-            raise Exception(f'Failed to fetch reviews: {response.status_code} - {response.text}')
+            raise ProviderRequestError(
+                provider='2gis',
+                status_code=response.status_code,
+                response_text=response.text,
+            )
         return response.json()
 
     def get_all_reviews(self, firm_id: str, *, page_size: int = 50) -> dict:

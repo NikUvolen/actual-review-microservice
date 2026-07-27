@@ -1,16 +1,26 @@
-import re
+from urllib.parse import urlparse
 
 from common_parser.services.http_client import get as http_get
+from common_parser.parsing.exceptions import (
+    InvalidSourceUrlError,
+    ProviderRequestError,
+)
 
 
 class VlRuClient:
     base_url = 'https://www.vl.ru'
 
     def extract_company_slug(self, source_url: str) -> str:
-        match = re.search(r'/([^/?#]+)/?$', source_url)
-        if not match:
-            raise ValueError('Cannot extract vl.ru company slug from source URL.')
-        return match.group(1)
+        path_parts = [
+            part
+            for part in urlparse(source_url).path.split('/')
+            if part
+        ]
+        if not path_parts:
+            raise InvalidSourceUrlError(
+                'Cannot extract vl.ru company slug from source URL.'
+            )
+        return path_parts[-1]
 
     def get_comments_thread(self, company_slug: str) -> dict:
         url = f'{self.base_url}/commentsgate/ajax/thread/company/{company_slug}/embedded'
@@ -27,8 +37,11 @@ class VlRuClient:
 
         response = http_get(url, headers=headers, params=params)
         if response.status_code != 200:
-            # TODO: заменить ошибку на кастомную
-            raise Exception('')
+            raise ProviderRequestError(
+                provider='vlru',
+                status_code=response.status_code,
+                response_text=response.text,
+            )
         return response.json()
 
     def get_comments_page(
@@ -53,8 +66,11 @@ class VlRuClient:
 
         response = http_get(url, headers=headers, params=params)
         if response.status_code != 200:
-            # TODO: заменить ошибку на кастомную
-            raise Exception('')
+            raise ProviderRequestError(
+                provider='vlru',
+                status_code=response.status_code,
+                response_text=response.text,
+            )
         return response.json()
 
     def get_company_page(self, company_slug: str) -> str:
@@ -73,7 +89,10 @@ class VlRuClient:
         response = http_get(url, headers=headers)
 
         if response.status_code != 200:
-            # TODO: заменить ошибку на кастомную
-            raise Exception('')
+            raise ProviderRequestError(
+                provider='vlru',
+                status_code=response.status_code,
+                response_text=response.text,
+            )
 
         return response.text

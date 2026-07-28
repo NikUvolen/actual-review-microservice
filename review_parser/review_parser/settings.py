@@ -13,6 +13,9 @@ https://docs.djangoproject.com/en/5.2/ref/settings/
 from pathlib import Path
 from .logging_conf import configure_logging
 
+from os import getenv
+
+
 configure_logging()
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
@@ -90,9 +93,18 @@ WSGI_APPLICATION = 'review_parser.wsgi.application'
 # https://docs.djangoproject.com/en/5.2/ref/settings/#databases
 
 DATABASES = {
+    # 'default': {
+    #     'ENGINE': 'django.db.backends.sqlite3',
+    #     'NAME': BASE_DIR / 'db.sqlite3',
+    # }
+
     'default': {
-        'ENGINE': 'django.db.backends.sqlite3',
-        'NAME': BASE_DIR / 'db.sqlite3',
+        'ENGINE': getenv('DB_ENGINE', 'django.db.backends.postgresql'),
+        'NAME': getenv('DB_NAME', 'cashflow'),
+        'USER': getenv('DB_USER', 'postgres'),
+        'PASSWORD': getenv('DB_PASSWORD', 'postgres'),
+        'HOST': getenv('DB_HOST', 'localhost'),
+        'PORT': getenv('DB_PORT', '5432'),
     }
 }
 

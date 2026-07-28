@@ -13,3 +13,4 @@ celerybeat-schedule
 celery@b32a73f14763
 .venv/
 celerybeat-schedule
+*.rdb

@@ -13,6 +13,38 @@ from django.shortcuts import get_object_or_404
 from loguru import logger
 from time import perf_counter
 
+from common_parser.services.review_parsing import ReviewParsingService
+
+
+# --- new tasks ---
+
+@shared_task(name='parse_branch_reviews_async')
+def parse_branch_reviews_async(branch_id: int, provider: str):
+    t0 = perf_counter()
+    branch = get_object_or_404(Branch, id=branch_id)
+    result = ReviewParsingService().parse_and_save_branch_reviews(
+        branch=branch,
+        provider=provider
+    )
+
+    logger.info(
+        f'parse_branch_reviews_async finished: '
+        f'branch_id={branch_id} provider={provider} '
+        f'parsed={result.parsed_count} created={result.created_count} ' 
+        f'skipped={result.skipped_count} '
+        f'duration_ms={int((perf_counter() - t0) * 1000)}'
+    )
+
+    return {
+        'branch_id': branch_id,
+        'provider': provider,
+        'parsed_count': result.parsed_count,
+        'created_count': result.created_count,
+        'skipped_count': result.skipped_count,
+    }
+
+
+# --- old tasks ---
 
 @shared_task(name='common_parser.tasks.weekly_parsing')
 def weekly_parsing():

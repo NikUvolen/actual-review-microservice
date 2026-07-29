@@ -8,7 +8,7 @@ from common_parser.tools.parse import (
     create_vlru_reviews,
 )
 from common_parser.tools.parse_videos import parse_youtube_videos, parse_vk_videos
-from common_parser.models import Branch, Playlist
+from common_parser.models import BranchProvider, Playlist
 from django.shortcuts import get_object_or_404
 from loguru import logger
 from time import perf_counter
@@ -19,28 +19,33 @@ from common_parser.services.review_parsing import ReviewParsingService
 # --- new tasks ---
 
 @shared_task(name='parse_branch_reviews_async')
-def parse_branch_reviews_async(branch_id: int, provider: str):
+def parse_branch_reviews_async(branch_provider_id: int):
     t0 = perf_counter()
-    branch = get_object_or_404(Branch, id=branch_id)
-    result = ReviewParsingService().parse_and_save_branch_reviews(
-        branch=branch,
-        provider=provider
+    branch_provider = get_object_or_404(BranchProvider, id=branch_provider_id)
+    result = ReviewParsingService().parse_and_save_provider_reviews(
+        branch_provider=branch_provider
     )
+
+    duration_ms = int((perf_counter() - t0) * 1000)
 
     logger.info(
         f'parse_branch_reviews_async finished: '
-        f'branch_id={branch_id} provider={provider} '
+        f'branch_provider_id={branch_provider_id} '
+        f'branch_id={branch_provider.branch.pk} '
+        f'provider={branch_provider.provider} '
         f'parsed={result.parsed_count} created={result.created_count} ' 
         f'skipped={result.skipped_count} '
-        f'duration_ms={int((perf_counter() - t0) * 1000)}'
+        f'duration_ms={duration_ms}'
     )
 
     return {
-        'branch_id': branch_id,
-        'provider': provider,
-        'parsed_count': result.parsed_count,
-        'created_count': result.created_count,
-        'skipped_count': result.skipped_count,
+        'branch_provider_id': branch_provider_id,
+        'branch_id': branch_provider.branch.pk,
+        'provider': branch_provider.provider,
+        'parsed': result.parsed_count,
+        'created': result.created_count,
+        'skipped': result.skipped_count,
+        'duration_ms': duration_ms,
     }
 
 

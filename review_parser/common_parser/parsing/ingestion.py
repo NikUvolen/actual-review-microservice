@@ -5,7 +5,6 @@ from django.db import IntegrityError, transaction
 from django.utils import timezone
 
 from common_parser.models import (
-    Branch,
     BranchProvider,
     ProviderStat,
     Review,
@@ -72,22 +71,9 @@ class ReviewIngestionService:
             }
         )
 
-    def _get_or_create_branch_provider(self, branch: Branch, result: ParseResult) -> BranchProvider:
-        branch_provider, _ = BranchProvider.objects.get_or_create(
-            branch=branch,
-            provider=result.provider,
-            source_url=result.source_url,
-            defaults={
-                "external_place_id": None
-            }
-        )
-        return branch_provider
-
-    def save(self, branch: Branch, result: ParseResult) -> IngestionResult:
+    def save(self, branch_provider: BranchProvider, result: ParseResult) -> IngestionResult:
         created_count = 0
         skipped_count = 0
-
-        branch_provider = self._get_or_create_branch_provider(branch, result)
 
         self._update_provider_stats(branch_provider, result)
 

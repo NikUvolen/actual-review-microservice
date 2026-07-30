@@ -93,6 +93,36 @@ class YandexClient:
     
         return values
 
+    def _find_review_results_container(self, data: Any) -> dict[str, Any] | None:
+        """
+        Find an organization dict that contains reviewResults.
+
+        The average business rating is stored near reviewResults in the parent
+        organization object, not inside reviewResults itself.
+        """
+        if isinstance(data, dict):
+            review_results = data.get("reviewResults")
+
+            if (
+                isinstance(review_results, dict)
+                and isinstance(review_results.get("reviews"), list)
+                and isinstance(review_results.get("params"), dict)
+            ):
+                return data
+
+            for value in data.values():
+                found = self._find_review_results_container(value)
+                if found:
+                    return found
+
+        elif isinstance(data, list):
+            for item in data:
+                found = self._find_review_results_container(item)
+                if found:
+                    return found
+
+        return None
+
     def extract_business_id(self, source_url: str, html: str | None = None) -> str:
         """
         Extract Yandex organization/business id from URL or HTML.
@@ -213,21 +243,23 @@ class YandexClient:
         Extract reviewResults block from a Yandex reviews page HTML.
 
         The returned dict contains raw reviews and pagination metadata:
-        reviews, params, tags, aspects.
+        reviews, params, tags, aspects. If possible, business_rating is added
+        from the parent organization ratingData block.
         """
         states = self.extract_state_views(html)
 
         for state in states:
-            candidates = self._walk_values(state, "reviewResults")
+            container = self._find_review_results_container(state)
+            if not container:
+                continue
 
-            for candidate in candidates:
-                if (
-                    isinstance(candidate, dict)
-                    and isinstance(candidate.get("reviews"), list)
-                    and isinstance(candidate.get("params"), dict)
-                ):
-                    return candidate
+            review_results = dict(container["reviewResults"])
+            rating_data = container.get("ratingData") or {}
 
+            if isinstance(rating_data, dict):
+                review_results["business_rating"] = rating_data.get("ratingValue")
+
+            return review_results
 
         raise ParserError("Cannot find Yandex reviewResults in HTML.")
 

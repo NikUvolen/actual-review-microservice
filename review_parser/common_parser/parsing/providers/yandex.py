@@ -1,5 +1,6 @@
 from datetime import datetime
 from typing import Any
+from urllib.parse import urlencode
 
 from common_parser.parsing.clients.yandex import YandexClient
 from common_parser.parsing.dto import ParseResult, ParsedReview
@@ -86,6 +87,21 @@ class YandexParser(BaseReviewParser):
                 media_urls.append(url)
 
         return media_urls
+
+    def _parse_review_url(self, raw_review: dict[str, Any]) -> str | None:
+        business_id = raw_review.get('businessId')
+        author = raw_review.get('author') or {}
+        public_id = author.get('publicId')
+
+        if not business_id or not public_id:
+            return None
+
+        query = urlencode({
+            'reviews[publicId]': public_id,
+            'utm_source': 'review',
+        })
+
+        return f'https://yandex.ru/maps/org/{business_id}/reviews?{query}'
     
     def _parse_review(self, raw_review: dict[str, Any]) -> ParsedReview:
         author = raw_review.get('author') or {}
@@ -97,7 +113,7 @@ class YandexParser(BaseReviewParser):
             rating=self._parse_rating(raw_review),
             text=raw_review.get('text') or '',
             pub_date=self._parse_datetime(raw_review.get('updatedTime')),
-            review_url=None,
+            review_url=self._parse_review_url(raw_review),
             media_urls=self._parse_media_urls(raw_review)
         )
 

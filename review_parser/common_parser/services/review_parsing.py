@@ -4,6 +4,7 @@ from common_parser.parsing.providers import (
     BaseReviewParser,
     TwoGisParser,
     VlRuParser,
+    YandexParser,
 )
 
 
@@ -19,6 +20,7 @@ class ReviewParsingService:
     parser_classes: dict[str, type[BaseReviewParser]] = {
         '2gis': TwoGisParser,
         'vlru': VlRuParser,
+        'yandex': YandexParser,
     }
 
     def __init__(self, ingestion_service: ReviewIngestionService | None = None):

@@ -1,4 +1,7 @@
+from datetime import timedelta, datetime
+
 from django.db import models
+from django.utils import timezone
 
 class Organization(models.Model):
     name = models.CharField(max_length=255, null=True, blank=True)
@@ -36,7 +39,7 @@ class BranchProvider(models.Model):
         ('yandex', 'Yandex'),
         ('google', 'Google')
     )
-    parsing_schedule = (
+    PARSE_FREQUENCY_CHOICES = (
         ('hourly', 'Раз в час'),
         ('daily', 'Раз в день'),
         ('weekly', 'Раз в неделю'),
@@ -62,7 +65,7 @@ class BranchProvider(models.Model):
     is_active = models.BooleanField(default=True)
     parse_frequency = models.CharField(
         max_length=20,
-        choices=parsing_schedule,
+        choices=PARSE_FREQUENCY_CHOICES,
         default='weekly'
     )
     next_parse_date = models.DateTimeField(
@@ -82,6 +85,32 @@ class BranchProvider(models.Model):
                 name='unique_branch_provider_source_url'
             )
         ]
+
+    def get_next_parse_date(self, from_date: datetime | None = None) -> datetime:
+        now = from_date or timezone.now()
+
+        if self.parse_frequency == 'hourly':
+            return now + timedelta(hours=1)
+        elif self.parse_frequency == 'daily':
+            return now + timedelta(days=1)
+        elif self.parse_frequency == 'weekly':
+            return now + timedelta(days=7)
+        elif self.parse_frequency == 'monthly':
+            return now + timedelta(days=30)
+        else:
+            raise ValueError(f'Unknown parse_frequency: {self.parse_frequency}')
+
+    def mark_as_parsed(self) -> None:
+        now = timezone.now()
+
+        self.last_parse_date = now
+        self.next_parse_date = self.get_next_parse_date(now)
+        self.save(
+            update_fields=[
+                'last_parse_date',
+                'next_parse_date',
+            ]
+        )
 
     def __str__(self):
         return f'{self.branch.pk} : {self.provider}: {self.source_url}'

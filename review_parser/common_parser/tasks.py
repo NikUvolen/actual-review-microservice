@@ -9,6 +9,7 @@ from common_parser.tools.parse import (
     create_2gis_reviews,
     create_vlru_reviews,
 )
+from common_parser.services.parsing_orchestrator import ParsingOrchestrator
 from common_parser.tools.parse_videos import parse_youtube_videos, parse_vk_videos
 from common_parser.models import Branch, BranchProvider, Playlist
 from django.shortcuts import get_object_or_404
@@ -43,6 +44,8 @@ def parse_branch_reviews_async(self, branch_provider_id: int):
         result = ReviewParsingService().parse_and_save_provider_reviews(
             branch_provider=branch_provider
         )
+
+        branch_provider.mark_as_parsed()
 
     except (
         ProviderRequestError,
@@ -93,6 +96,14 @@ def parse_branch_reviews_async(self, branch_provider_id: int):
         'duration_ms': duration_ms,
     }
 
+@shared_task(name='enqueue_due_branch_provider_parsing')
+def enqueue_due_branch_provider_parsing():
+    task_ids = ParsingOrchestrator().parse_due_branch_providers_async()
+
+    return {
+        'enqueued_count': len(task_ids),
+        'task_ids': task_ids,
+    }
 
 # --- old tasks ---
 

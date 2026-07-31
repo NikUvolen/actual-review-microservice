@@ -1,6 +1,8 @@
+import requests
 from celery import shared_task
 from django.core.mail import send_mail
 from django.conf import settings
+
 from common_parser.tools.parse import (
     parse_all_providers,
     create_yandex_reviews,
@@ -13,18 +15,61 @@ from django.shortcuts import get_object_or_404
 from loguru import logger
 from time import perf_counter
 
-from common_parser.services.review_parsing import ReviewParsingService
+from common_parser.parsing.exceptions import (
+    InvalidSourceUrlError,
+    ParserError,
+    ProviderRequestError,
+)
+from common_parser.services.review_parsing import (
+    MissingReviewSourceUrlError,
+    UnknownProviderError,
+    ReviewParsingService,
+)
 
 
 # --- new tasks ---
 
-@shared_task(name='parse_branch_reviews_async')
-def parse_branch_reviews_async(branch_provider_id: int):
+@shared_task(
+    bind=True,
+    name='parse_branch_reviews_async',
+    max_retries=3,
+    default_retry_delay=60,
+)
+def parse_branch_reviews_async(self, branch_provider_id: int):
     t0 = perf_counter()
-    branch_provider = get_object_or_404(BranchProvider, id=branch_provider_id)
-    result = ReviewParsingService().parse_and_save_provider_reviews(
-        branch_provider=branch_provider
-    )
+
+    try:
+        branch_provider = get_object_or_404(BranchProvider, id=branch_provider_id)
+        result = ReviewParsingService().parse_and_save_provider_reviews(
+            branch_provider=branch_provider
+        )
+
+    except (
+        ProviderRequestError,
+        requests.Timeout,
+        requests.ConnectionError,
+    ) as exc:
+        logger.warning(
+            f'parse_branch_reviews_async retry: '
+            f'branch_provider_id={branch_provider_id} '
+            f'error={exc}'
+        )
+
+        raise self.retry(exc=exc)
+    
+    except (
+        InvalidSourceUrlError,
+        MissingReviewSourceUrlError,
+        UnknownProviderError,
+        ParserError,
+    ) as exc:
+        logger.exception(
+            f'parse_branch_reviews_async failed without retry: '
+            f'branch_provider_id={branch_provider_id} '
+            f'error={exc}'
+        )
+        raise
+
 
     duration_ms = int((perf_counter() - t0) * 1000)
 

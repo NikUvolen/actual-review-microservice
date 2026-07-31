@@ -1,17 +1,15 @@
-from celery.result import AsyncResult
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import status
 from django.shortcuts import get_object_or_404
 
-from review_parser.celery import app
 from common_parser.models import Review, BranchProvider
-from common_parser.tasks import parse_branch_reviews_async
 from common_parser.serializers import (
     ReviewSerializer,
     ParsingTaskStartSerializer, 
     ParsingTaskStatusSerializer
 )
+from common_parser.services.parsing_orchestrator import ParsingOrchestrator
 
 
 # Получить BranchProvider по id
@@ -19,16 +17,12 @@ from common_parser.serializers import (
 # вернуть task_id + status = Pending
 class BranchProviderParseAPIView(APIView):
     def post(self, request, branch_provider_id: int):
-        branch_provider = get_object_or_404(BranchProvider, pk=branch_provider_id)
+        task_id = ParsingOrchestrator().parse_branch_provider_async(branch_provider_id)
 
-        task = app.send_task(
-            'parse_branch_reviews_async',
-            args=[branch_provider.pk],
-        )
         serializer = ParsingTaskStartSerializer(
             {
-                "task_id": task.id,
-                "branch_provider_id": branch_provider.pk,
+                "task_id": task_id,
+                "branch_provider_id": branch_provider_id,
                 "status": "PENDING",
             }
         )
@@ -41,7 +35,7 @@ class BranchProviderParseAPIView(APIView):
 
 class ParsingTaskStatusAPIView(APIView):
     def get(self, request, task_id: str):
-        task = AsyncResult(task_id)
+        task = ParsingOrchestrator().get_task_result(task_id)
 
         serializer = ParsingTaskStatusSerializer(
             {
@@ -69,6 +63,6 @@ class BranchProviderReviewsAPIView(APIView):
         count: int = reviews.count()
 
         return Response({
-            'count': reviews.count(),
+            'count': count,
             'results': serializer.data
         })

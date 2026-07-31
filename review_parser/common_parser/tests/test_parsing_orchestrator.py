@@ -1,4 +1,5 @@
 import pytest
+from django.utils import timezone
 
 from common_parser.models import Branch, BranchProvider, Organization
 from common_parser.parsing.ingestion import IngestionResult
@@ -74,7 +75,7 @@ def test_parsing_orchestrator_enqueues_async_task(monkeypatch, branch_provider):
             self.__class__.called_args = args
             return FakeTaskResult()
 
-    monkeypatch.setattr(parsing_orchestrator, "app", FakeCeleryApp())
+    monkeypatch.setattr(parsing_orchestrator, "celery_app", FakeCeleryApp())
 
     orchestrator = ParsingOrchestrator()
 
@@ -107,7 +108,7 @@ def test_parsing_orchestrator_enqueues_all_branch_provider_tasks(
             self.__class__.calls.append((name, args))
             return FakeTaskResult(f"task-{args[0]}")
 
-    monkeypatch.setattr(parsing_orchestrator, "app", FakeCeleryApp())
+    monkeypatch.setattr(parsing_orchestrator, "celery_app", FakeCeleryApp())
 
     task_ids = ParsingOrchestrator().parse_branch_providers_async(
         branch_provider.branch_id
@@ -121,6 +122,59 @@ def test_parsing_orchestrator_enqueues_all_branch_provider_tasks(
         ("parse_branch_reviews_async", [branch_provider.pk]),
         ("parse_branch_reviews_async", [second_provider.pk]),
     ]
+
+
+@pytest.mark.django_db
+def test_parsing_orchestrator_enqueues_only_due_branch_providers(
+    monkeypatch,
+    branch_provider,
+):
+    now = timezone.now()
+    branch_provider.next_parse_date = now - timezone.timedelta(minutes=1)
+    branch_provider.save(update_fields=["next_parse_date"])
+
+    inactive_provider = BranchProvider.objects.create(
+        branch=branch_provider.branch,
+        provider="yandex",
+        source_url="https://yandex.ru/maps/org/1009077078/reviews/",
+        is_active=False,
+        next_parse_date=now - timezone.timedelta(minutes=1),
+    )
+    future_provider = BranchProvider.objects.create(
+        branch=branch_provider.branch,
+        provider="vlru",
+        source_url="https://www.vl.ru/test-company",
+        next_parse_date=now + timezone.timedelta(hours=1),
+    )
+    no_schedule_provider = BranchProvider.objects.create(
+        branch=branch_provider.branch,
+        provider="google",
+        source_url="https://example.com/google",
+        next_parse_date=None,
+    )
+
+    class FakeTaskResult:
+        def __init__(self, task_id: str):
+            self.id = task_id
+
+    class FakeCeleryApp:
+        calls: list[tuple[str, list[int]]] = []
+
+        def send_task(self, name: str, args: list[int]):
+            self.__class__.calls.append((name, args))
+            return FakeTaskResult(f"task-{args[0]}")
+
+    monkeypatch.setattr(parsing_orchestrator, "celery_app", FakeCeleryApp())
+
+    task_ids = ParsingOrchestrator().parse_due_branch_providers_async()
+
+    assert task_ids == [f"task-{branch_provider.pk}"]
+    assert FakeCeleryApp.calls == [
+        ("parse_branch_reviews_async", [branch_provider.pk]),
+    ]
+    assert inactive_provider.pk is not None
+    assert future_provider.pk is not None
+    assert no_schedule_provider.pk is not None
 
 
 def test_parsing_orchestrator_returns_async_result(monkeypatch):

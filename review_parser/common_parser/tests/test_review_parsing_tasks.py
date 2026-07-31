@@ -118,3 +118,22 @@ def test_parse_branch_reviews_async_does_not_retry_permanent_errors(
 
     with pytest.raises(type(error)):
         tasks.parse_branch_reviews_async(branch_provider.id)
+
+
+def test_enqueue_due_branch_provider_parsing_returns_task_ids(monkeypatch):
+    class FakeParsingOrchestrator:
+        def parse_due_branch_providers_async(self) -> list[str]:
+            return ["task-1", "task-2"]
+
+    monkeypatch.setattr(
+        tasks,
+        "ParsingOrchestrator",
+        FakeParsingOrchestrator,
+    )
+
+    result = tasks.enqueue_due_branch_provider_parsing()
+
+    assert result == {
+        "enqueued_count": 2,
+        "task_ids": ["task-1", "task-2"],
+    }

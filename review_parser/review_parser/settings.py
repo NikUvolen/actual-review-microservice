@@ -38,7 +38,7 @@ ALLOWED_HOSTS = ['185.104.113.137', '127.0.0.1']
 
 INSTALLED_APPS = [
     'drf_yasg',
-
+    'rest_framework',
     'nested_admin',
 
     'django_celery_results',

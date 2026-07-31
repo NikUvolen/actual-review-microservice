@@ -85,6 +85,44 @@ def test_parsing_orchestrator_enqueues_async_task(monkeypatch, branch_provider):
     assert FakeCeleryApp.called_args == [branch_provider.pk]
 
 
+@pytest.mark.django_db
+def test_parsing_orchestrator_enqueues_all_branch_provider_tasks(
+    monkeypatch,
+    branch_provider,
+):
+    second_provider = BranchProvider.objects.create(
+        branch=branch_provider.branch,
+        provider="yandex",
+        source_url="https://yandex.ru/maps/org/1009077078/reviews/",
+    )
+
+    class FakeTaskResult:
+        def __init__(self, task_id: str):
+            self.id = task_id
+
+    class FakeCeleryApp:
+        calls: list[tuple[str, list[int]]] = []
+
+        def send_task(self, name: str, args: list[int]):
+            self.__class__.calls.append((name, args))
+            return FakeTaskResult(f"task-{args[0]}")
+
+    monkeypatch.setattr(parsing_orchestrator, "app", FakeCeleryApp())
+
+    task_ids = ParsingOrchestrator().parse_branch_providers_async(
+        branch_provider.branch_id
+    )
+
+    assert task_ids == [
+        f"task-{branch_provider.pk}",
+        f"task-{second_provider.pk}",
+    ]
+    assert FakeCeleryApp.calls == [
+        ("parse_branch_reviews_async", [branch_provider.pk]),
+        ("parse_branch_reviews_async", [second_provider.pk]),
+    ]
+
+
 def test_parsing_orchestrator_returns_async_result(monkeypatch):
     class FakeAsyncResult:
         def __init__(self, task_id: str):

@@ -4,6 +4,7 @@ from celery import Celery, current_app
 from celery.result import AsyncResult
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
+from django.db.models import Q
 
 from common_parser.models import Branch, BranchProvider
 from common_parser.parsing.ingestion import IngestionResult
@@ -30,11 +31,17 @@ class ParsingOrchestrator:
     def _get_due_branch_providers(self):
         now = timezone.now()
 
-        return BranchProvider.objects.filter(
-            is_active=True,
-            next_parse_date__isnull=False,
-            next_parse_date__lte=now
-        ).order_by('pk')
+        return (
+            BranchProvider.objects
+            .filter(
+                is_active=True
+            )
+            .filter(
+                Q(next_parse_date__isnull=True) | 
+                Q(next_parse_date__lte=now)
+            )
+            .order_by('pk')
+        )
 
     def get_branch_provider(self, branch_provider_id: int) -> BranchProvider:
         return get_object_or_404(

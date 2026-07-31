@@ -1,11 +1,26 @@
 from django.urls import path
-from .views import get_reviews, get_reviews_by_ip, get_videos_by_ip
-from .views_v2 import reviews_v2, reviews_by_ip_v2
+
+from common_parser.views.review_parsing import (
+    BranchProviderParseAPIView,
+    ParsingTaskStatusAPIView,
+    BranchProviderReviewsAPIView,
+)    
+
 
 urlpatterns = [
-    path('get_reviews/', get_reviews, name='get-reviews'),
-    path('get_reviews_by_ip', get_reviews_by_ip, name='get-reviews-by-ip'),
-    path('get_videos_by_ip', get_videos_by_ip, name='get-videos-by-ip'),
-    path('v2/reviews', reviews_v2, name='reviews-v2'),
-    path('v2/reviews_by_ip', reviews_by_ip_v2, name='reviews-by-ip-v2'),
+    path(
+        'branch_providers/<int:branch_provider_id>/parse/',
+        BranchProviderParseAPIView.as_view(),
+        name='branch-provider-parse'
+    ),
+    path(
+            'branch_providers/<int:branch_provider_id>/reviews/',
+            BranchProviderReviewsAPIView.as_view(),
+            name='branch-provider-reviews'
+    ),
+    path(
+        'parsing-tasks/<str:task_id>/',
+        ParsingTaskStatusAPIView.as_view(),
+        name='parsing-task-status'
+    ),
 ]

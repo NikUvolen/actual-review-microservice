@@ -1,6 +1,6 @@
 import pytest
 
-from common_parser.models import Branch
+from common_parser.models import BranchProvider
 from common_parser.parsing.dto import ParseResult
 from common_parser.parsing.ingestion import IngestionResult
 from common_parser.services.review_parsing import (
@@ -10,27 +10,8 @@ from common_parser.services.review_parsing import (
 )
 
 
-def test_review_parsing_service_gets_2gis_source_url():
-    branch = Branch(twogis_map_url="https://2gis.ru/irkutsk/firm/123")
-
-    source_url = ReviewParsingService().get_source_url(branch, "2gis")
-
-    assert source_url == "https://2gis.ru/irkutsk/firm/123"
-
-
-def test_review_parsing_service_gets_vlru_source_url():
-    branch = Branch(vlru_url="https://www.vl.ru/test-company")
-
-    source_url = ReviewParsingService().get_source_url(branch, "vlru")
-
-    assert source_url == "https://www.vl.ru/test-company"
-
-
 def test_review_parsing_service_raises_for_unknown_provider():
     service = ReviewParsingService()
-
-    with pytest.raises(UnknownProviderError):
-        service.get_source_url(Branch(), "unknown")
 
     with pytest.raises(UnknownProviderError):
         service.get_parser("unknown")
@@ -38,12 +19,13 @@ def test_review_parsing_service_raises_for_unknown_provider():
 
 def test_review_parsing_service_raises_for_missing_source_url():
     service = ReviewParsingService()
+    branch_provider = BranchProvider(provider="2gis", source_url="")
 
     with pytest.raises(MissingReviewSourceUrlError):
-        service.get_source_url(Branch(twogis_map_url=""), "2gis")
+        service.parse_and_save_provider_reviews(branch_provider)
 
 
-def test_review_parsing_service_parses_and_saves_branch_reviews():
+def test_review_parsing_service_parses_and_saves_provider_reviews():
     class FakeParser:
         parsed_urls: list[str] = []
 
@@ -58,11 +40,15 @@ def test_review_parsing_service_parses_and_saves_branch_reviews():
             )
 
     class FakeIngestionService:
-        saved_branch: Branch | None = None
+        saved_provider: BranchProvider | None = None
         saved_result: ParseResult | None = None
 
-        def save(self, branch: Branch, result: ParseResult) -> IngestionResult:
-            self.saved_branch = branch
+        def save(
+            self,
+            branch_provider: BranchProvider,
+            result: ParseResult,
+        ) -> IngestionResult:
+            self.saved_provider = branch_provider
             self.saved_result = result
             return IngestionResult(
                 parsed_count=1,
@@ -70,15 +56,18 @@ def test_review_parsing_service_parses_and_saves_branch_reviews():
                 skipped_count=0,
             )
 
-    branch = Branch(twogis_map_url="https://2gis.ru/irkutsk/firm/123")
+    branch_provider = BranchProvider(
+        provider="2gis",
+        source_url="https://2gis.ru/irkutsk/firm/123",
+    )
     ingestion_service = FakeIngestionService()
     service = ReviewParsingService(ingestion_service=ingestion_service)
     service.parser_classes = {"2gis": FakeParser}
 
-    result = service.parse_and_save_branch_reviews(branch, "2gis")
+    result = service.parse_and_save_provider_reviews(branch_provider)
 
     assert FakeParser.parsed_urls == ["https://2gis.ru/irkutsk/firm/123"]
-    assert ingestion_service.saved_branch is branch
+    assert ingestion_service.saved_provider is branch_provider
     assert ingestion_service.saved_result is not None
     assert ingestion_service.saved_result.provider == "2gis"
     assert ingestion_service.saved_result.source_url == "https://2gis.ru/irkutsk/firm/123"

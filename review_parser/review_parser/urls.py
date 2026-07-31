@@ -1,7 +1,7 @@
 from django.contrib import admin
 from django.urls import path, include
 from .yasg import urlpatterns as doc_urls
-from common_parser.views import webhook
+from common_parser.webhooks import webhook
 
 urlpatterns = [
     path('admin/', admin.site.urls),

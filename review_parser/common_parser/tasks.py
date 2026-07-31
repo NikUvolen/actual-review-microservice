@@ -96,7 +96,10 @@ def parse_branch_reviews_async(self, branch_provider_id: int):
         'duration_ms': duration_ms,
     }
 
-@shared_task(name='enqueue_due_branch_provider_parsing')
+@shared_task(
+    name='enqueue_due_branch_provider_parsing',
+    ignore_result=True,
+)
 def enqueue_due_branch_provider_parsing():
     task_ids = ParsingOrchestrator().parse_due_branch_providers_async()
 

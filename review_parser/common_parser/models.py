@@ -36,6 +36,12 @@ class BranchProvider(models.Model):
         ('yandex', 'Yandex'),
         ('google', 'Google')
     )
+    parsing_schedule = (
+        ('hourly', 'Раз в час'),
+        ('daily', 'Раз в день'),
+        ('weekly', 'Раз в неделю'),
+        ('monthly', 'Раз в месяц'),
+    )
 
     branch = models.ForeignKey(
         Branch,
@@ -52,6 +58,21 @@ class BranchProvider(models.Model):
         null=True, 
         blank=True,
         db_index=True
+    )
+    is_active = models.BooleanField(default=True)
+    parse_frequency = models.CharField(
+        max_length=20,
+        choices=parsing_schedule,
+        default='weekly'
+    )
+    next_parse_date = models.DateTimeField(
+        null=True, 
+        blank=True,
+        db_index=True
+    )
+    last_parse_date = models.DateTimeField(
+        null=True, 
+        blank=True
     )
 
     class Meta:

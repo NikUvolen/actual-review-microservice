@@ -7,6 +7,8 @@ from datetime import timedelta
 
 load_dotenv()
 
+PARSE_BEAT_INTERVAL_MINUTES = int(os.getenv('CELERY_BEAT_PARSE_INTERVAL_MINUTES', '1'))
+
 os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'review_parser.settings')
 
 app = Celery('review_parser')
@@ -26,9 +28,9 @@ app.conf.broker_transport_options = {
 }
 # Настройка периодических задач
 app.conf.beat_schedule = {
-    'weekly-sunday-6am-task': {
-        'task': 'common_parser.tasks.weekly_parsing',
-        'schedule': crontab(hour=6, minute=0, day_of_week='sun'),
+    'enqueue-due-branch-provider-parsing': {
+        'task': 'enqueue_due_branch_provider_parsing',
+        'schedule': crontab(minute=f'*/{PARSE_BEAT_INTERVAL_MINUTES}'),
     },
     # Disable cleanup task by scheduling to run every ~1000 years
     'backend_cleanup': {

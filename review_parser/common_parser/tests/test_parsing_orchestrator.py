@@ -96,6 +96,12 @@ def test_parsing_orchestrator_enqueues_all_branch_provider_tasks(
         provider="yandex",
         source_url="https://yandex.ru/maps/org/1009077078/reviews/",
     )
+    inactive_provider = BranchProvider.objects.create(
+        branch=branch_provider.branch,
+        provider="vlru",
+        source_url="https://www.vl.ru/test-company",
+        is_active=False,
+    )
 
     class FakeTaskResult:
         def __init__(self, task_id: str):
@@ -122,6 +128,7 @@ def test_parsing_orchestrator_enqueues_all_branch_provider_tasks(
         ("parse_branch_reviews_async", [branch_provider.pk]),
         ("parse_branch_reviews_async", [second_provider.pk]),
     ]
+    assert inactive_provider.pk is not None
 
 
 @pytest.mark.django_db
@@ -168,9 +175,13 @@ def test_parsing_orchestrator_enqueues_only_due_branch_providers(
 
     task_ids = ParsingOrchestrator().parse_due_branch_providers_async()
 
-    assert task_ids == [f"task-{branch_provider.pk}"]
+    assert task_ids == [
+        f"task-{branch_provider.pk}",
+        f"task-{no_schedule_provider.pk}",
+    ]
     assert FakeCeleryApp.calls == [
         ("parse_branch_reviews_async", [branch_provider.pk]),
+        ("parse_branch_reviews_async", [no_schedule_provider.pk]),
     ]
     assert inactive_provider.pk is not None
     assert future_provider.pk is not None

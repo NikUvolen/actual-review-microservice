@@ -71,7 +71,8 @@ class ParsingOrchestrator:
         get_object_or_404(Branch, pk=branch_id)
 
         branch_providers = BranchProvider.objects.filter(
-            branch_id=branch_id
+            branch_id=branch_id,
+            is_active=True,
         ).order_by('pk')
 
         task_ids: list[str] = []

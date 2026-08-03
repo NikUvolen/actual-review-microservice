@@ -51,13 +51,7 @@ INSTALLED_APPS = [
     'django.contrib.messages',
     'django.contrib.staticfiles',
 
-    'yandex_parser',
     'common_parser',
-    'twogis_parser',
-    'vl_parser',
-    'youtube_parser',
-    'vkvideo_parser',
-
 ]
 
 MIDDLEWARE = [

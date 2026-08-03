@@ -1,4 +1,4 @@
-from django.urls import path, re_path
+from django.urls import path
 from rest_framework import permissions
 from drf_yasg.views import get_schema_view
 from drf_yasg import openapi
@@ -9,18 +9,26 @@ schema_view = get_schema_view(
       title="Review Parser API",
       default_version='v1',
       description="""
-API для парсинга и получения отзывов с различных платформ (Яндекс, Google, 2GIS, VL.RU)
-и видео из плейлистов (YouTube, VK).
+API для управления организациями, филиалами и источниками отзывов, запуска
+парсинга и получения сохраненных отзывов.
 
 **Основные эндпоинты:**
-- `GET /api/common/get_reviews/` — отзывы по ID филиала
-- `GET /api/common/get_reviews_by_ip` — отзывы по IP (требуется Branch IP Mapping)
-- `GET /api/common/v2/reviews` — отзывы v2 (рекомендуется, удобные query-параметры)
-- `GET /api/common/v2/reviews_by_ip` — отзывы v2 по IP (рекомендуется)
-- `GET /api/common/get_videos_by_ip` — видео по IP (требуется Playlist IP Mapping)
+- `POST /api/auth/token/` — получить access и refresh JWT
+- `POST /api/auth/token/refresh/` — обновить access JWT
+- `GET/PATCH /api/v1/organization/` — получить или изменить свою организацию
+- `GET/POST /api/v1/branches/` — список и создание филиалов
+- `GET/PUT/PATCH/DELETE /api/v1/branches/{id}/` — управление филиалом
+- `GET/POST /api/v1/branches/{id}/providers/` — источники отзывов филиала
+- `GET/PUT/PATCH/DELETE /api/v1/branch-providers/{id}/` — управление источником
+- `POST /api/v1/branch_providers/{id}/parse/` — запустить парсинг через Celery
+- `GET /api/v1/parsing-tasks/{task_id}/` — получить статус фоновой задачи
+- `GET /api/v1/branches/{id}/reviews/` — отзывы филиала
+- `GET /api/v1/branch_providers/{id}/reviews/` — отзывы одного источника
 
-**Провайдеры отзывов:** yandex, 2gis, vlru (google выключен)
-**Провайдеры видео:** youtube, vk
+Все прикладные эндпоинты требуют JWT. В Swagger нажмите **Authorize** и введите
+`Bearer <access_token>`.
+
+**Работающие провайдеры отзывов:** `2gis`, `vlru`, `yandex`.
 """,
       license=openapi.License(name="BSD License"),
    ),
@@ -29,8 +37,8 @@ API для парсинга и получения отзывов с различ
 )
 
 urlpatterns = [
-   re_path(
-      r'^swagger(?P<format>\.json|\.yaml)$',
+   path(
+      'swagger.<str:format>',
       schema_view.without_ui(cache_timeout=0),
       name='schema-json',
    ),

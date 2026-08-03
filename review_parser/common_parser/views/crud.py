@@ -2,16 +2,20 @@ from django.db import transaction
 from django.db.models import Prefetch
 from django.shortcuts import get_object_or_404
 from rest_framework import generics
+from rest_framework.request import Request
+from drf_yasg.utils import swagger_auto_schema
 
 from common_parser.models import Branch, BranchProvider, Organization
 from common_parser.serializers import (
     BranchProviderSerializer,
     BranchSerializer,
+    BranchCreateSerializer,
     OrganizationSerializer,
 )
 
 
 class OrganizationAccessMixin:
+    request: Request
     _organization: Organization | None = None
 
     def get_organization(self) -> Organization:
@@ -39,6 +43,13 @@ class BranchListCreateAPIView(
 ):
     serializer_class = BranchSerializer
 
+    @swagger_auto_schema(
+        request_body=BranchCreateSerializer,
+        responses={201: BranchSerializer},
+    )
+    def post(self, request, *args, **kwargs):
+        return super().post(request, *args, **kwargs)
+
     def get_queryset(self):
         if getattr(self, 'swagger_fake_view', False):
             return Branch.objects.none()
@@ -60,7 +71,7 @@ class BranchListCreateAPIView(
         )
 
     def get_serializer_context(self):
-        context = super().get_serializer_context()
+        context = dict(super().get_serializer_context())
         if not getattr(self, 'swagger_fake_view', False):
             context['organization'] = self.get_organization()
         return context
@@ -74,6 +85,20 @@ class BranchDetailAPIView(
     generics.RetrieveUpdateDestroyAPIView,
 ):
     serializer_class = BranchSerializer
+
+    @swagger_auto_schema(
+        request_body=BranchCreateSerializer,
+        responses={200: BranchSerializer},
+    )
+    def put(self, request, *args, **kwargs):
+        return super().put(request, *args, **kwargs)
+
+    @swagger_auto_schema(
+        request_body=BranchCreateSerializer,
+        responses={200: None},
+    )
+    def patch(self, request, *args, **kwargs):
+        return super().patch(request, *args, **kwargs)
 
     def get_queryset(self):
         if getattr(self, 'swagger_fake_view', False):
@@ -95,14 +120,17 @@ class BranchDetailAPIView(
         )
 
     def get_serializer_context(self):
-        context = super().get_serializer_context()
+        context = dict(super().get_serializer_context())
         if not getattr(self, 'swagger_fake_view', False):
             context['organization'] = self.get_organization()
         return context
 
     def perform_destroy(self, instance: Branch):
         with transaction.atomic():
-            instance.branch_providers.filter(is_active=True).update(is_active=False)
+            BranchProvider.objects.filter(
+                branch=instance,
+                is_active=True
+            ).update(is_active=False)
             instance.is_active = False
             instance.save(update_fields=['is_active'])
 
@@ -136,7 +164,7 @@ class BranchProviderListCreateAPIView(
         )
 
     def get_serializer_context(self):
-        context = super().get_serializer_context()
+        context = dict(super().get_serializer_context())
         if not getattr(self, 'swagger_fake_view', False):
             context['branch'] = self.get_branch()
         return context
@@ -165,6 +193,6 @@ class BranchProviderDetailAPIView(
             .select_related('branch', 'stats')
         )
 
-    def perform_destroy(self, instance: BranchProvider):
+    def perform_destroy(self, instance: BranchProvider) -> None:
         instance.is_active = False
         instance.save(update_fields=['is_active'])

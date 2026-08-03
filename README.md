@@ -1,8 +1,9 @@
 # Actual Review Microservice
 
-Учебный Django-сервис для сбора отзывов о филиалах компаний из внешних источников и сохранения их в нормализованную базу данных.
+Django-сервис для сбора отзывов о филиалах организаций из внешних источников,
+нормализации данных и предоставления их через REST API.
 
-Сейчас основной рабочий pipeline построен вокруг отзывов из `2GIS` и `VL.ru`:
+Рабочий pipeline:
 
 ```text
 BranchProvider
@@ -16,99 +17,87 @@ BranchProvider
 
 Реализовано:
 
-- нормализованные модели для организаций, филиалов, провайдеров отзывов, отзывов, медиа, плейлистов и видео;
+- нормализованные модели организаций, филиалов, источников, отзывов и медиа;
 - единый интерфейс review-парсеров через `BaseReviewParser`;
-- DTO для результата парсинга: `ParsedReview`, `ParseResult`;
-- парсер `2GIS`;
-- парсер `VL.ru`;
-- кастомные ошибки парсеров;
-- сервис сохранения результатов парсинга в БД;
-- дедупликация отзывов внутри одного `BranchProvider`;
-- Celery task для фонового запуска парсинга одного `BranchProvider`;
-- тесты для клиентов, парсеров, ingestion-сервиса, application-сервиса и Celery task.
+- парсеры `2GIS`, `VL.ru` и `Yandex Maps`;
+- нормализация внешних данных в `ParsedReview` и `ParseResult`;
+- сохранение отзывов через `ReviewIngestionService`;
+- дедупликация по внешнему ID или хешу содержимого;
+- ограничение количества отзывов на один `BranchProvider`;
+- синхронный и асинхронный запуск через `ParsingOrchestrator`;
+- фоновые задачи Celery с retry для временных ошибок провайдеров;
+- расписание Celery Beat по вторникам и субботам в 06:00;
+- JWT-аутентификация и изоляция данных по организации пользователя;
+- CRUD для филиалов и их источников;
+- API запуска парсинга, проверки статуса задачи и получения отзывов;
+- фильтрация отзывов по провайдеру и диапазону дат;
+- пагинация списка отзывов;
+- Swagger и ReDoc;
+- тесты клиентов, парсеров, ingestion, application services, Celery и API.
 
-В разработке:
+Пока не реализовано:
 
-- API под новую нормализованную БД;
-- сериализаторы под новые модели;
-- orchestration layer для управления сценариями запуска;
-- история запусков парсинга;
-- расписание парсинга через Celery Beat;
-- инкрементальный парсинг;
-- JWT-доступы;
-- новые провайдеры: Yandex Maps, Google, YouTube, VK Video.
-
-В проекте еще есть legacy-код старой реализации. Часть старых `views`, `tools` и `tasks` временно отключена или не используется новым pipeline.
+- Google Maps, YouTube и VK Video;
+- история запусков парсинга `ParseRun`;
+- production-конфигурация Docker, Gunicorn и Nginx;
+- регистрация клиентов через публичный API.
 
 ## Стек
 
 - Python `3.12`
 - Django `5.2`
 - Django REST Framework
-- Celery
+- Simple JWT
+- Celery и Celery Beat
 - Redis
 - PostgreSQL
 - django-celery-results
 - BeautifulSoup
+- drf-yasg
 - pytest / pytest-django
 - uv
 
-## Основные модели
+## Модели
 
 ### Organization
 
-Компания-клиент.
+Организация-клиент. Связана с пользователем отношением `OneToOne`.
 
 Основные поля:
 
+- `user`
 - `name`
 - `inn`
 
 ### Branch
 
-Филиал организации.
-
-Основные поля:
+Филиал организации:
 
 - `organization`
 - `city`
 - `address`
+- `is_active`
 
-Ограничение уникальности:
-
-```text
-organization + address
-```
+Пара `organization + address` уникальна. Удаление через API является мягким:
+филиал и его источники переводятся в неактивное состояние.
 
 ### BranchProvider
 
-Источник отзывов для конкретного филиала.
-
-Например, один филиал может иметь несколько источников:
-
-- `2GIS`
-- `VL.ru`
-- `Yandex Maps`
-- `Google`
-
-Основные поля:
+Источник отзывов конкретного филиала:
 
 - `branch`
 - `provider`
 - `source_url`
 - `external_place_id`
+- `is_active`
+- `last_parse_date`
 
-Ограничение уникальности:
-
-```text
-branch + provider + source_url
-```
+Пара `branch + provider + source_url` уникальна. Реально поддерживаются `2gis`,
+`vlru` и `yandex`.
 
 ### ProviderStat
 
-Агрегированная статистика по источнику отзывов.
-
-Основные поля:
+Статистика внешнего источника:
 
 - `provider`
 - `external_rating_avg`
@@ -116,9 +105,7 @@ branch + provider + source_url
 
 ### Review
 
-Нормализованный отзыв.
-
-Основные поля:
+Нормализованный отзыв:
 
 - `provider`
 - `author_name`
@@ -130,7 +117,7 @@ branch + provider + source_url
 - `external_review_id`
 - `content_hash`
 
-Дедупликация:
+Уникальность контролируется ограничениями:
 
 ```text
 provider + external_review_id
@@ -139,43 +126,18 @@ provider + content_hash
 
 ### ReviewMedia
 
-Медиа, прикрепленные к отзыву.
-
-Основные поля:
+Медиа отзыва:
 
 - `review`
 - `media_type`
 - `url`
 
-### Playlist
+### Playlist и Video
 
-Плейлист организации на видеохостинге.
+Модели подготовлены для будущей поддержки YouTube и VK Video, но parser pipeline
+и публичный API для них пока не реализованы.
 
-Основные поля:
-
-- `organization`
-- `title`
-- `provider`
-- `source_url`
-- `external_playlist_id`
-- `last_parse_time`
-
-### Video
-
-Видео из плейлиста.
-
-Основные поля:
-
-- `playlist`
-- `external_id`
-- `url`
-- `title`
-- `author`
-- `duration_seconds`
-- `preview_url`
-- `published_date`
-
-## Структура важной части проекта
+## Структура
 
 ```text
 review_parser/
@@ -185,73 +147,77 @@ review_parser/
     settings.py
     urls.py
     celery.py
+    yasg.py
 
   common_parser/
     models.py
     admin.py
     tasks.py
-    serializers.py
-    views.py
     urls.py
-
-    services/
-      review_parsing.py
 
     parsing/
       dto.py
       exceptions.py
       ingestion.py
+      limits.py
 
       clients/
         twogis.py
         vlru.py
+        yandex.py
 
       providers/
         base.py
         twogis.py
         vlru.py
+        yandex.py
+
+    services/
+      http_client.py
+      parsing_orchestrator.py
+      review_parsing.py
+
+    serializers/
+      organizations.py
+      branches.py
+      reviews.py
+      parsing_tasks.py
+      videos.py
+
+    views/
+      crud.py
+      review_parsing.py
 
     tests/
-      test_twogis_client.py
-      test_vlru_client.py
-      test_twogis_parser.py
-      test_vlru_parser.py
-      test_review_parsers.py
-      test_review_ingestion.py
-      test_review_parsing_service.py
-      test_review_parsing_tasks.py
 ```
 
-## Как работает новый review pipeline
+## Review pipeline
 
 ### 1. BranchProvider
 
-В базе создается `BranchProvider`.
-
-Пример:
+Для филиала создается источник:
 
 ```text
-branch = филиал компании
+branch = филиал организации
 provider = 2gis
 source_url = https://2gis.ru/irkutsk/firm/1549095919422612
 ```
 
 ### 2. ReviewParsingService
 
-`ReviewParsingService` получает `BranchProvider`, выбирает нужный parser по полю `provider` и запускает парсинг.
-
-Поддерживаемые parser classes сейчас:
+`ReviewParsingService` выбирает parser по коду провайдера:
 
 ```python
 {
     "2gis": TwoGisParser,
     "vlru": VlRuParser,
+    "yandex": YandexParser,
 }
 ```
 
 ### 3. Parser
 
-Parser приводит внешний ответ к единому формату:
+Каждый parser реализует `BaseReviewParser` и возвращает единый DTO:
 
 ```python
 ParseResult(
@@ -259,45 +225,59 @@ ParseResult(
     source_url="...",
     external_count=160,
     avg_rating=4.4,
-    reviews=[ParsedReview(...)]
+    reviews=[ParsedReview(...)],
 )
 ```
 
 ### 4. ReviewIngestionService
 
-`ReviewIngestionService` сохраняет результат парсинга:
+Ingestion service:
 
 - обновляет `ProviderStat`;
+- выбирает последние отзывы в пределах лимита;
 - проверяет дубли;
-- создает `Review`;
-- создает связанные `ReviewMedia`;
-- возвращает счетчики `parsed_count`, `created_count`, `skipped_count`.
+- создает `Review` и `ReviewMedia`;
+- удаляет отзывы сверх лимита для данного `BranchProvider`;
+- возвращает `parsed_count`, `created_count`, `skipped_count`.
 
-### 5. Celery task
+Лимиты:
 
-Фоновый запуск выполняется через task:
+```text
+2gis   100
+vlru   100
+yandex 600
+```
+
+### 5. Celery и оркестратор
+
+`ParsingOrchestrator` запускает один источник, все источники филиала или все
+активные источники. Фоновый task:
 
 ```python
 parse_branch_reviews_async(branch_provider_id)
 ```
 
-Task возвращает:
+Пример результата:
 
 ```json
 {
   "branch_provider_id": 1,
   "branch_id": 1,
   "provider": "2gis",
-  "parsed": 156,
-  "created": 156,
-  "skipped": 0,
+  "parsed": 100,
+  "created": 10,
+  "skipped": 90,
   "duration_ms": 3014
 }
 ```
 
+Celery Beat дважды в неделю запускает задачу
+`enqueue_scheduled_branch_provider_parsing`, которая ставит в очередь все
+активные источники активных филиалов.
+
 ## Переменные окружения
 
-Минимально для локального запуска:
+Минимальная локальная конфигурация:
 
 ```env
 DB_ENGINE=django.db.backends.postgresql
@@ -307,105 +287,69 @@ DB_PASSWORD=postgres
 DB_HOST=localhost
 DB_PORT=5432
 
-YOUTUBE_API_KEY=dummy
-```
-
-По умолчанию Celery настроен на Redis:
-
-```text
-redis://redis:6379/0
-```
-
-Для локального запуска worker вне Docker обычно нужно переопределить broker:
-
-```env
 CELERY_BROKER_URL=redis://localhost:6379/0
 ```
 
-Сейчас в `settings.py` broker задан константой, поэтому при локальном запуске Redis должен быть доступен как `redis`, либо настройку нужно временно заменить на `localhost`.
+При запуске внутри Docker Compose брокер обычно доступен как:
 
-## Установка через uv
+```env
+CELERY_BROKER_URL=redis://redis:6379/0
+```
+
+## Локальный запуск
+
+Установить зависимости:
 
 ```bash
 uv sync
 ```
 
-Проверить Django:
+Проверить конфигурацию и применить миграции:
 
 ```bash
 uv run python review_parser/manage.py check
-```
-
-Применить миграции:
-
-```bash
 uv run python review_parser/manage.py migrate
 ```
 
-Запустить shell:
-
-```bash
-uv run python review_parser/manage.py shell
-```
-
-Запустить dev server:
+Запустить API:
 
 ```bash
 uv run python review_parser/manage.py runserver
 ```
 
-## Запуск Celery
-
-Worker:
+Запустить worker и beat в отдельных терминалах:
 
 ```bash
 uv run celery -A review_parser worker -l info --pool=solo --concurrency=1
-```
-
-Beat:
-
-```bash
 uv run celery -A review_parser beat -l info
 ```
 
-На macOS для локальной разработки лучше использовать:
+На macOS для локальной разработки используется `--pool=solo`, чтобы избежать
+проблем `fork` с worker-процессами.
 
-```bash
---pool=solo
-```
-
-Это снижает риск падения worker из-за multiprocessing.
-
-## Запуск через Docker Compose
-
-```bash
-docker compose up --build
-```
-
-Сервисы:
-
-- `web`
-- `redis`
-- `celery`
-- `celery_beat`
-
-## Быстрая проверка парсинга в Django shell
+## Проверка через Django shell
 
 ```python
+from django.contrib.auth import get_user_model
+
 from common_parser.models import Organization, Branch, BranchProvider
 from common_parser.services.review_parsing import ReviewParsingService
 
+User = get_user_model()
+user = User.objects.create_user(
+    username="test-owner",
+    password="test-password",
+)
 organization = Organization.objects.create(
+    user=user,
     name="Test company",
     inn="123456789012",
 )
-
 branch = Branch.objects.create(
     organization=organization,
     city="Иркутск",
     address="Тестовый адрес",
 )
-
 provider = BranchProvider.objects.create(
     branch=branch,
     provider="2gis",
@@ -413,114 +357,121 @@ provider = BranchProvider.objects.create(
 )
 
 result = ReviewParsingService().parse_and_save_provider_reviews(provider)
-
 result.parsed_count
 result.created_count
 result.skipped_count
 ```
 
-Проверить сохраненные отзывы:
-
-```python
-from common_parser.models import Review, ProviderStat
-
-Review.objects.filter(provider=provider).count()
-ProviderStat.objects.get(provider=provider).external_rating_avg
-```
-
-## Запуск Celery task из shell
+Фоновый запуск:
 
 ```python
 from common_parser.tasks import parse_branch_reviews_async
 
-task = parse_branch_reviews_async.delay(provider.id)
+task = parse_branch_reviews_async.delay(provider.pk)
 task.id
 ```
 
-Проверить результат:
+## API и JWT
 
-```python
-from celery.result import AsyncResult
+Получить токены:
 
-result = AsyncResult(task.id)
-result.status
-result.result
+```http
+POST /api/auth/token/
+Content-Type: application/json
+
+{
+  "username": "test-owner",
+  "password": "test-password"
+}
+```
+
+При обращении к API передается access token:
+
+```http
+Authorization: Bearer <access_token>
+```
+
+Основные endpoints:
+
+| Метод | URL | Назначение |
+|---|---|---|
+| `POST` | `/api/auth/token/` | Получить access и refresh token |
+| `POST` | `/api/auth/token/refresh/` | Обновить access token |
+| `GET`, `PATCH` | `/api/v1/organization/` | Своя организация |
+| `GET`, `POST` | `/api/v1/branches/` | Список и создание филиалов |
+| `GET`, `PUT`, `PATCH`, `DELETE` | `/api/v1/branches/{id}/` | Управление филиалом |
+| `GET`, `POST` | `/api/v1/branches/{id}/providers/` | Источники филиала |
+| `GET`, `PUT`, `PATCH`, `DELETE` | `/api/v1/branch-providers/{id}/` | Управление источником |
+| `POST` | `/api/v1/branch_providers/{id}/parse/` | Запустить парсинг |
+| `GET` | `/api/v1/parsing-tasks/{task_id}/` | Статус Celery task |
+| `GET` | `/api/v1/branches/{id}/reviews/` | Отзывы филиала |
+| `GET` | `/api/v1/branch_providers/{id}/reviews/` | Отзывы источника |
+
+Отзывы филиала поддерживают параметры:
+
+```text
+provider=2gis
+date_from=2026-07-01
+date_to=2026-07-31
+page=1
+page_size=20
+```
+
+Максимальный `page_size` равен `100`.
+
+Пользователь получает доступ только к организации, филиалам, источникам и
+отзывам, связанным с его учетной записью. Чужие объекты возвращают `404`.
+
+## Swagger
+
+- Swagger UI: `http://127.0.0.1:8000/swagger/`
+- ReDoc: `http://127.0.0.1:8000/redoc/`
+- OpenAPI JSON: `http://127.0.0.1:8000/swagger.json`
+- OpenAPI YAML: `http://127.0.0.1:8000/swagger.yaml`
+
+Для авторизации в Swagger нажмите **Authorize** и введите:
+
+```text
+Bearer <access_token>
 ```
 
 ## Тесты
 
-Запустить основные тесты нового pipeline:
-
-```bash
-uv run pytest \
-  review_parser/common_parser/tests/test_review_parsers.py \
-  review_parser/common_parser/tests/test_review_parsing_service.py \
-  review_parser/common_parser/tests/test_review_ingestion.py \
-  review_parser/common_parser/tests/test_review_parsing_tasks.py
-```
-
-Запустить все тесты:
+Запустить весь набор:
 
 ```bash
 uv run pytest
 ```
 
+Проверить отсутствие незаписанных изменений моделей:
+
+```bash
+uv run python review_parser/manage.py makemigrations --check --dry-run
+```
+
 ## Дедупликация
 
-Сейчас дедупликация работает внутри одного `BranchProvider`.
+Дедупликация выполняется отдельно внутри каждого `BranchProvider`.
 
-Если внешний провайдер отдает стабильный id отзыва, используется:
+Если провайдер возвращает стабильный внешний ID, проверяется:
 
 ```text
 provider + external_review_id
 ```
 
-Если внешнего id нет, используется `content_hash`.
+Если ID отсутствует, вычисляется SHA-256 `content_hash` из нормализованных полей
+отзыва. Ограничения уникальности в базе дополнительно защищают от конкурентного
+создания дублей.
 
-Хеш строится из нормализованных данных отзыва:
+Дедупликация одинаковых отзывов между разными площадками не выполняется.
 
-```text
-author_name
-rating
-published_date
-text
-review_url
-```
+## Ограничения
 
-Это защищает от повторного сохранения тех же отзывов при повторном парсинге одного и того же источника.
-
-Дедупликация между разными провайдерами пока не реализована. Ее лучше делать отдельной research-задачей, потому что похожие отзывы с разных площадок не всегда являются дублями.
-
-## Swagger
-
-Swagger подключен через `drf-yasg`.
-
-URL задаются в:
-
-```text
-review_parser/review_parser/yasg.py
-```
-
-Основные URL проекта:
-
-```text
-/admin/
-/api/common/
-/api/yandex/
-/api/twogis/
-/api/vlru/
-```
-
-Новый API под нормализованную БД еще находится в разработке.
-
-## Ограничения текущей реализации
-
-- `common_parser/serializers.py` еще частично описывает старые поля и требует адаптации под новые модели.
-- `common_parser/views.py` сейчас содержит закомментированный legacy API.
-- В `common_parser/tasks.py` есть старые задачи, которые зависят от удаленных полей старой модели `Branch`.
-- Celery Beat пока содержит старую weekly-задачу.
-- Нет модели истории запусков `ParseRun`.
-- Нет полноценного orchestration layer.
-- Нет JWT-доступов и ограничения данных по организации пользователя.
-- Нет production-ready Docker/Nginx-конфигурации.
-
+- endpoint статуса Celery показывает текущее состояние и результат, но отдельной
+  модели истории запусков `ParseRun` пока нет;
+- внутренние API внешних провайдеров могут измениться и потребовать обновления
+  clients/parsers;
+- Google Maps, YouTube и VK Video пока не подключены к рабочему pipeline;
+- текущие Dockerfile и Docker Compose предназначены для разработки и требуют
+  переработки перед production-деплоем;
+- конфигурация production security, Gunicorn и Nginx пока не подготовлена.

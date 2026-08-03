@@ -29,7 +29,9 @@ class ParsingOrchestrator:
     def get_branch_provider(self, branch_provider_id: int) -> BranchProvider:
         return get_object_or_404(
             BranchProvider,
-            pk=branch_provider_id
+            pk=branch_provider_id,
+            is_active=True,
+            branch__is_active=True,
         )
 
     def parse_branch_provider_sync(
@@ -51,11 +53,12 @@ class ParsingOrchestrator:
         return self._enqueue_branch_provider(branch_provider)
 
     def parse_branch_providers_async(self, branch_id: int) -> list[str]:
-        get_object_or_404(Branch, pk=branch_id)
+        get_object_or_404(Branch, pk=branch_id, is_active=True)
 
         branch_providers = BranchProvider.objects.filter(
             branch_id=branch_id,
             is_active=True,
+            branch__is_active=True,
         ).order_by('pk')
 
         task_ids: list[str] = []
@@ -72,6 +75,7 @@ class ParsingOrchestrator:
     def parse_active_branch_providers_async(self) -> list[str]:
         branch_providers = BranchProvider.objects.filter(
             is_active=True,
+            branch__is_active=True,
         ).order_by('pk')
 
         task_ids: list[str] = []

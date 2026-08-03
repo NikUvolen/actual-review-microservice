@@ -5,9 +5,41 @@ from common_parser.views.review_parsing import (
     ParsingTaskStatusAPIView,
     BranchProviderReviewsAPIView,
 )    
+from common_parser.views.crud import (
+    BranchDetailAPIView,
+    BranchListCreateAPIView,
+    BranchProviderDetailAPIView,
+    BranchProviderListCreateAPIView,
+    OrganizationAPIView,
+)
 
 
 urlpatterns = [
+    path(
+        'organization/',
+        OrganizationAPIView.as_view(),
+        name='organization-detail',
+    ),
+    path(
+        'branches/',
+        BranchListCreateAPIView.as_view(),
+        name='branch-list',
+    ),
+    path(
+        'branches/<int:pk>/',
+        BranchDetailAPIView.as_view(),
+        name='branch-detail',
+    ),
+    path(
+        'branches/<int:branch_id>/providers/',
+        BranchProviderListCreateAPIView.as_view(),
+        name='branch-provider-list',
+    ),
+    path(
+        'branch-providers/<int:pk>/',
+        BranchProviderDetailAPIView.as_view(),
+        name='branch-provider-detail',
+    ),
     path(
         'branch_providers/<int:branch_provider_id>/parse/',
         BranchProviderParseAPIView.as_view(),

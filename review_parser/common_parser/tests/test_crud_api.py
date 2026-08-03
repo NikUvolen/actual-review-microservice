@@ -1,4 +1,5 @@
 import pytest
+from datetime import datetime, timedelta
 from django.contrib.auth import get_user_model
 from django.urls import reverse
 from rest_framework.test import APIClient
@@ -351,6 +352,160 @@ def test_user_cannot_read_foreign_provider_reviews(
             'branch-provider-reviews',
             kwargs={'branch_provider_id': foreign_provider.pk},
         )
+    )
+
+    assert response.status_code == 404
+
+
+@pytest.mark.django_db
+def test_branch_reviews_can_be_filtered_by_provider_and_date_range(
+    authenticated_client,
+    organization_context,
+):
+    _, organization, _ = organization_context
+    branch = Branch.objects.create(
+        organization=organization,
+        city='Irkutsk',
+        address='Own address',
+    )
+    twogis = BranchProvider.objects.create(
+        branch=branch,
+        provider='2gis',
+        source_url='https://2gis.ru/irkutsk/firm/123',
+    )
+    vlru = BranchProvider.objects.create(
+        branch=branch,
+        provider='vlru',
+        source_url='https://www.vl.ru/test-company',
+    )
+    base_date = datetime(2026, 7, 10, 12, 0)
+
+    for index, (provider, published_date) in enumerate(
+        (
+            (twogis, base_date - timedelta(days=1)),
+            (twogis, base_date),
+            (twogis, base_date + timedelta(days=1)),
+            (vlru, base_date),
+        )
+    ):
+        Review.objects.create(
+            provider=provider,
+            author_name=f'Author {index}',
+            text=f'Review {index}',
+            published_date=published_date,
+            external_review_id=f'review-{index}',
+            content_hash=f'{index:064x}',
+        )
+
+    response = authenticated_client.get(
+        reverse('branch-reviews', kwargs={'branch_id': branch.pk}),
+        {
+            'provider': '2gis',
+            'date_from': '2026-07-10',
+            'date_to': '2026-07-11',
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.data['count'] == 2
+    assert [review['text'] for review in response.data['results']] == [
+        'Review 2',
+        'Review 1',
+    ]
+
+
+@pytest.mark.django_db
+def test_branch_reviews_are_paginated(
+    authenticated_client,
+    organization_context,
+):
+    _, organization, _ = organization_context
+    branch = Branch.objects.create(
+        organization=organization,
+        city='Irkutsk',
+        address='Own address',
+    )
+    provider = BranchProvider.objects.create(
+        branch=branch,
+        provider='2gis',
+        source_url='https://2gis.ru/irkutsk/firm/123',
+    )
+    published_date = datetime(2026, 7, 10, 12, 0)
+
+    Review.objects.bulk_create(
+        [
+            Review(
+                provider=provider,
+                author_name=f'Author {index}',
+                text=f'Review {index}',
+                published_date=published_date + timedelta(minutes=index),
+                external_review_id=f'review-{index}',
+                content_hash=f'{index:064x}',
+            )
+            for index in range(12)
+        ]
+    )
+
+    response = authenticated_client.get(
+        reverse('branch-reviews', kwargs={'branch_id': branch.pk}),
+        {'page': 2, 'page_size': 5},
+    )
+
+    assert response.status_code == 200
+    assert response.data['count'] == 12
+    assert response.data['next'] is not None
+    assert response.data['previous'] is not None
+    assert len(response.data['results']) == 5
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize(
+    ('params', 'error_field'),
+    (
+        ({'provider': 'unknown'}, 'provider'),
+        ({'date_from': 'not-a-date'}, 'date_from'),
+        (
+            {'date_from': '2026-07-11', 'date_to': '2026-07-10'},
+            'date_to',
+        ),
+    ),
+)
+def test_branch_reviews_reject_invalid_filters(
+    authenticated_client,
+    organization_context,
+    params,
+    error_field,
+):
+    _, organization, _ = organization_context
+    branch = Branch.objects.create(
+        organization=organization,
+        city='Irkutsk',
+        address='Own address',
+    )
+
+    response = authenticated_client.get(
+        reverse('branch-reviews', kwargs={'branch_id': branch.pk}),
+        params,
+    )
+
+    assert response.status_code == 400
+    assert error_field in response.data
+
+
+@pytest.mark.django_db
+def test_user_cannot_read_foreign_branch_reviews(
+    authenticated_client,
+    organization_context,
+):
+    _, _, other_organization = organization_context
+    foreign_branch = Branch.objects.create(
+        organization=other_organization,
+        city='Irkutsk',
+        address='Foreign address',
+    )
+
+    response = authenticated_client.get(
+        reverse('branch-reviews', kwargs={'branch_id': foreign_branch.pk})
     )
 
     assert response.status_code == 404

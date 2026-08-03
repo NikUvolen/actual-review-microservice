@@ -5,6 +5,7 @@ from common_parser.serializers.branches import (
     ProviderStatSerializer,
 )
 from common_parser.serializers.reviews import (
+    ReviewFilterSerializer,
     ReviewSerializer,
     ReviewMediaSerializer,
 )
@@ -22,6 +23,7 @@ __all__ = (
     "BranchSerializer",
     "BranchProviderSerializer",
     "ProviderStatSerializer",
+    "ReviewFilterSerializer",
     "ReviewSerializer",
     "ReviewMediaSerializer",
     "PlaylistSerializer",

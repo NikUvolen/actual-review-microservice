@@ -120,9 +120,9 @@ def test_parse_branch_reviews_async_does_not_retry_permanent_errors(
         tasks.parse_branch_reviews_async(branch_provider.id)
 
 
-def test_enqueue_due_branch_provider_parsing_returns_task_ids(monkeypatch):
+def test_enqueue_scheduled_branch_provider_parsing_returns_task_ids(monkeypatch):
     class FakeParsingOrchestrator:
-        def parse_due_branch_providers_async(self) -> list[str]:
+        def parse_active_branch_providers_async(self) -> list[str]:
             return ["task-1", "task-2"]
 
     monkeypatch.setattr(
@@ -131,7 +131,7 @@ def test_enqueue_due_branch_provider_parsing_returns_task_ids(monkeypatch):
         FakeParsingOrchestrator,
     )
 
-    result = tasks.enqueue_due_branch_provider_parsing()
+    result = tasks.enqueue_scheduled_branch_provider_parsing()
 
     assert result == {
         "enqueued_count": 2,

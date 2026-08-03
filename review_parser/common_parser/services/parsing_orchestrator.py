@@ -3,8 +3,6 @@ from typing import cast
 from celery import Celery, current_app
 from celery.result import AsyncResult
 from django.shortcuts import get_object_or_404
-from django.utils import timezone
-from django.db.models import Q
 
 from common_parser.models import Branch, BranchProvider
 from common_parser.parsing.ingestion import IngestionResult
@@ -27,21 +25,6 @@ class ParsingOrchestrator:
             args=[branch_provider.pk],
         )
         return task.id
-
-    def _get_due_branch_providers(self):
-        now = timezone.now()
-
-        return (
-            BranchProvider.objects
-            .filter(
-                is_active=True
-            )
-            .filter(
-                Q(next_parse_date__isnull=True) | 
-                Q(next_parse_date__lte=now)
-            )
-            .order_by('pk')
-        )
 
     def get_branch_provider(self, branch_provider_id: int) -> BranchProvider:
         return get_object_or_404(
@@ -86,8 +69,10 @@ class ParsingOrchestrator:
     def get_task_result(self, task_id: str) -> AsyncResult:
         return AsyncResult(task_id)
 
-    def parse_due_branch_providers_async(self) -> list[str]:
-        branch_providers = self._get_due_branch_providers()
+    def parse_active_branch_providers_async(self) -> list[str]:
+        branch_providers = BranchProvider.objects.filter(
+            is_active=True,
+        ).order_by('pk')
 
         task_ids: list[str] = []
 

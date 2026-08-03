@@ -2,6 +2,7 @@ from dataclasses import dataclass
 from hashlib import sha256
 
 from django.db import IntegrityError, transaction
+from django.db.models import F
 from django.utils import timezone
 
 from common_parser.models import (
@@ -21,6 +22,8 @@ class IngestionResult:
 
 
 class ReviewIngestionService:
+    MAX_REVIEWS_PER_PROVIDER = 100
+
     def _make_content_hash(self, parsed_review: ParsedReview) -> str:
         if parsed_review.external_id:
             raw_value = f"external:{parsed_review.external_id}"
@@ -71,13 +74,40 @@ class ReviewIngestionService:
             }
         )
 
+    def _get_latest_reviews(
+        self,
+        reviews: list[ParsedReview],
+    ) -> list[ParsedReview]:
+        return sorted(
+            reviews,
+            key=lambda review: (
+                review.pub_date.timestamp() if review.pub_date else float("-inf")
+            ),
+            reverse=True,
+        )[:self.MAX_REVIEWS_PER_PROVIDER]
+
+    def _prune_old_reviews(self, branch_provider: BranchProvider) -> None:
+        review_ids_to_delete = list(
+            Review.objects
+            .filter(provider=branch_provider)
+            .order_by(
+                F("published_date").desc(nulls_last=True),
+                "-pk",
+            )
+            .values_list("pk", flat=True)[self.MAX_REVIEWS_PER_PROVIDER:]
+        )
+
+        if review_ids_to_delete:
+            Review.objects.filter(pk__in=review_ids_to_delete).delete()
+
     def save(self, branch_provider: BranchProvider, result: ParseResult) -> IngestionResult:
         created_count = 0
-        skipped_count = 0
+        reviews_to_ingest = self._get_latest_reviews(result.reviews)
+        skipped_count = len(result.reviews) - len(reviews_to_ingest)
 
         self._update_provider_stats(branch_provider, result)
 
-        for parsed_review in result.reviews:
+        for parsed_review in reviews_to_ingest:
             if self._review_exists(branch_provider, parsed_review):
                 skipped_count += 1
                 continue
@@ -101,6 +131,8 @@ class ReviewIngestionService:
                 continue
 
             created_count += 1
+
+        self._prune_old_reviews(branch_provider)
 
         return IngestionResult(
             parsed_count=len(result.reviews),

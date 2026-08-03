@@ -6,6 +6,7 @@ from common_parser.parsing.exceptions import (
     InvalidSourceUrlError,
     ProviderRequestError,
 )
+from common_parser.parsing.limits import get_review_limit
 
 
 class TwoGisClient:
@@ -48,7 +49,7 @@ class TwoGisClient:
             'fields': 'meta.branch_rating,meta.branch_reviews_count,meta.total_count',
             'without_my_first_review': 'false',
             'rated': 'true',
-            'sort_by': 'date_edited',
+            'sort_by': 'date_created',
             'key': self.api_key,
             'locale': 'ru_RU'
         }
@@ -62,26 +63,35 @@ class TwoGisClient:
             )
         return response.json()
 
-    def get_all_reviews(self, firm_id: str, *, page_size: int = 50) -> dict:
+    def get_all_reviews(
+        self,
+        firm_id: str,
+        *,
+        page_size: int = 50,
+        max_reviews: int = get_review_limit("2gis"),
+    ) -> dict:
         """
-        Fetches all reviews for the given firm ID, handling pagination.
+        Fetches the newest reviews for the given firm ID up to max_reviews.
 
         Args:
             firm_id (str): The firm ID to fetch reviews for.
             page_size (int): The maximum number of reviews to fetch per page. Default is 50.
+            max_reviews (int): The total maximum number of reviews to fetch.
         """
-        first_page = self.get_reviews_page(firm_id, limit=page_size, offset=0)
+        request_limit = min(page_size, max_reviews)
+        first_page = self.get_reviews_page(firm_id, limit=request_limit, offset=0)
 
         meta = first_page.get('meta', {})
-        reviews = list(first_page.get('reviews', []))
+        reviews = list(first_page.get('reviews', []))[:max_reviews]
         total_count = meta.get('total_count') or len(reviews)
 
         offset = len(reviews)
 
-        while offset < total_count:
+        while offset < total_count and len(reviews) < max_reviews:
+            request_limit = min(page_size, max_reviews - len(reviews))
             page = self.get_reviews_page(
                 firm_id,
-                limit=page_size,
+                limit=request_limit,
                 offset=offset
             )
             page_reviews = page.get('reviews', [])
@@ -89,7 +99,7 @@ class TwoGisClient:
             if not page_reviews:
                 break
 
-            reviews.extend(page_reviews)
+            reviews.extend(page_reviews[:request_limit])
             offset += len(page_reviews)
 
         return {

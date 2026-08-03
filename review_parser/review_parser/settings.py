@@ -39,6 +39,7 @@ ALLOWED_HOSTS = ['185.104.113.137', '127.0.0.1']
 INSTALLED_APPS = [
     'drf_yasg',
     'rest_framework',
+    'rest_framework_simplejwt',
     'nested_admin',
 
     'django_celery_results',
@@ -159,3 +160,12 @@ CELERY_ACCEPT_CONTENT = ['json']
 CELERY_TASK_SERIALIZER = 'json'
 CELERY_RESULT_SERIALIZER = 'json'
 CELERY_TIMEZONE = 'Europe/Moscow'
+
+REST_FRAMEWORK = {
+    "DEFAULT_AUTHENTICATION_CLASSES": (
+        "rest_framework_simplejwt.authentication.JWTAuthentication",
+    ),
+    "DEFAULT_PERMISSION_CLASSES": (
+        "rest_framework.permissions.IsAuthenticated",
+    ),
+}

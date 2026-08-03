@@ -2,10 +2,19 @@ from datetime import timedelta, datetime
 
 from django.db import models
 from django.utils import timezone
+from django.conf import settings
+
 
 class Organization(models.Model):
     name = models.CharField(max_length=255, null=True, blank=True)
     inn = models.CharField(max_length=12, null=False, blank=False, unique=True)
+    user = models.OneToOneField(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name='organization',
+        null=True, # TODO: Удалить после разработки
+        blank=True
+    )
     
     def __str__(self):
         return self.name or f'Организация #{self.pk}'

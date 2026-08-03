@@ -3,6 +3,7 @@ from django.urls import path
 from common_parser.views.review_parsing import (
     BranchProviderParseAPIView,
     ParsingTaskStatusAPIView,
+    BranchReviewsAPIView,
     BranchProviderReviewsAPIView,
 )    
 from common_parser.views.crud import (
@@ -44,6 +45,11 @@ urlpatterns = [
         'branch_providers/<int:branch_provider_id>/parse/',
         BranchProviderParseAPIView.as_view(),
         name='branch-provider-parse'
+    ),
+    path(
+        'branches/<int:branch_id>/reviews/',
+        BranchReviewsAPIView.as_view(),
+        name='branch-reviews',
     ),
     path(
             'branch_providers/<int:branch_provider_id>/reviews/',

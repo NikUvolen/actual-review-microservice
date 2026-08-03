@@ -70,6 +70,15 @@ class BranchProviderSerializer(serializers.ModelSerializer):
         return attrs
 
 
+class BranchCreateSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Branch
+        fields = (
+            'city',
+            'address'
+        )
+
+
 class BranchSerializer(serializers.ModelSerializer):
     organization = OrganizationSerializer(read_only=True)
     branch_providers = BranchProviderSerializer(many=True, read_only=True)

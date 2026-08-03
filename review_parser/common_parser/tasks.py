@@ -40,7 +40,12 @@ def parse_branch_reviews_async(self, branch_provider_id: int):
     t0 = perf_counter()
 
     try:
-        branch_provider = get_object_or_404(BranchProvider, id=branch_provider_id)
+        branch_provider = get_object_or_404(
+            BranchProvider,
+            id=branch_provider_id,
+            is_active=True,
+            branch__is_active=True,
+        )
         result = ReviewParsingService().parse_and_save_provider_reviews(
             branch_provider=branch_provider
         )

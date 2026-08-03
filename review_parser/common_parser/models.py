@@ -10,8 +10,6 @@ class Organization(models.Model):
         settings.AUTH_USER_MODEL,
         on_delete=models.CASCADE,
         related_name='organization',
-        null=True, # TODO: Удалить после разработки
-        blank=True
     )
     
     def __str__(self):
@@ -26,6 +24,7 @@ class Branch(models.Model):
     )
     city = models.CharField(max_length=255, null=True, blank=True)
     address = models.TextField()
+    is_active = models.BooleanField(default=True)
 
     class Meta:
         constraints = [

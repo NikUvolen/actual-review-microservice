@@ -1,4 +1,5 @@
 import pytest
+from django.contrib.auth import get_user_model
 
 from common_parser.models import Branch, BranchProvider, Organization
 from common_parser.parsing.exceptions import InvalidSourceUrlError, ProviderRequestError
@@ -9,9 +10,11 @@ from common_parser import tasks
 
 @pytest.fixture
 def branch_provider() -> BranchProvider:
+    user = get_user_model().objects.create_user(username='task-user')
     organization = Organization.objects.create(
         name="Test Org",
         inn="1234567890",
+        user=user,
     )
     branch = Branch.objects.create(
         organization=organization,

@@ -20,7 +20,9 @@ class BranchProviderParseAPIView(APIView):
         branch_provider = get_object_or_404(
             BranchProvider, 
             pk=branch_provider_id,
-            branch__organization=request.user.organization
+            branch__organization__user=request.user,
+            branch__is_active=True,
+            is_active=True,
         )
 
         task_id = ParsingOrchestrator().parse_branch_provider_async(branch_provider.pk)
@@ -59,7 +61,9 @@ class BranchProviderReviewsAPIView(APIView):
         branch_provider = get_object_or_404(
             BranchProvider, 
             pk=branch_provider_id,
-            branch__organization=request.user.organization
+            branch__organization__user=request.user,
+            branch__is_active=True,
+            is_active=True,
         )
 
         reviews = (

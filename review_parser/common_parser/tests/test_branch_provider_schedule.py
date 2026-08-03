@@ -1,5 +1,6 @@
 import pytest
 from django.conf import settings
+from django.contrib.auth import get_user_model
 
 from common_parser.models import Branch, BranchProvider, Organization
 from review_parser.celery import app as celery_app
@@ -7,9 +8,11 @@ from review_parser.celery import app as celery_app
 
 @pytest.fixture
 def branch_provider() -> BranchProvider:
+    user = get_user_model().objects.create_user(username='schedule-user')
     organization = Organization.objects.create(
         name="Test Org",
         inn="1234567890",
+        user=user,
     )
     branch = Branch.objects.create(
         organization=organization,

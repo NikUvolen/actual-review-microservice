@@ -28,11 +28,13 @@ class BranchAdmin(NestedModelAdmin):
         'id', 
         'organization', 
         'city',
-        'address'
+        'address',
+        'is_active',
     )
     list_filter = (
         'organization',
-        'city'
+        'city',
+        'is_active',
     )
     search_fields = (
         'address',
@@ -48,10 +50,12 @@ class BranchProviderAdmin(admin.ModelAdmin):
         'branch',
         'provider',
         'source_url',
-        'external_place_id'
+        'external_place_id',
+        'is_active',
     )
     list_filter = (
         'provider',
+        'is_active',
     )
     search_fields = (
         'source_url',
@@ -75,8 +79,8 @@ class ProviderStatAdmin(admin.ModelAdmin):
 
 @admin.register(Organization)
 class OrganizationAdmin(NestedModelAdmin):
-    list_display = ('id', 'name', 'inn')  
-    search_fields = ['name']        
+    list_display = ('id', 'name', 'inn', 'user')
+    search_fields = ['name', 'inn', 'user__username', 'user__email']
     ordering = ['id']
     inlines = [BranchInline] 
 

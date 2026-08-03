@@ -169,3 +169,16 @@ REST_FRAMEWORK = {
         "rest_framework.permissions.IsAuthenticated",
     ),
 }
+
+SWAGGER_SETTINGS = {
+    "SECURITY_DEFINITIONS": {
+        "Bearer": {
+            "type": "apiKey",
+            "name": "Authorization",
+            "in": "header",
+            "description": "JWT access token. Enter: Bearer <access_token>",
+        },
+    },
+    "USE_SESSION_AUTH": False,
+    "PERSIST_AUTH": True,
+}

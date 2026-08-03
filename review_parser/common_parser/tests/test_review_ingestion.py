@@ -181,6 +181,46 @@ def test_review_ingestion_keeps_latest_100_reviews_per_provider(
 
 
 @pytest.mark.django_db
+def test_review_ingestion_keeps_latest_600_yandex_reviews(
+    branch_provider: BranchProvider,
+):
+    branch_provider.provider = "yandex"
+    branch_provider.source_url = "https://yandex.ru/maps/org/123/reviews/"
+    branch_provider.save(update_fields=["provider", "source_url"])
+    base_date = datetime(2025, 1, 1, 10, 0, 0)
+    reviews = [
+        make_review(
+            external_id=f"yandex-review-{index}",
+            pub_date=base_date + timedelta(days=index),
+            review_url=f"https://example.com/yandex-reviews/{index}",
+        )
+        for index in range(605)
+    ]
+
+    ingestion_result = ReviewIngestionService().save(
+        branch_provider,
+        make_result(
+            provider="yandex",
+            reviews=reviews,
+            external_count=605,
+        ),
+    )
+
+    stored_external_ids = set(
+        Review.objects
+        .filter(provider=branch_provider)
+        .values_list("external_review_id", flat=True)
+    )
+
+    assert ingestion_result.parsed_count == 605
+    assert ingestion_result.created_count == 600
+    assert ingestion_result.skipped_count == 5
+    assert len(stored_external_ids) == 600
+    assert "yandex-review-0" not in stored_external_ids
+    assert "yandex-review-604" in stored_external_ids
+
+
+@pytest.mark.django_db
 def test_review_ingestion_prunes_only_current_provider_and_cascades_media(
     branch_provider: BranchProvider,
 ):

@@ -119,6 +119,49 @@ def test_vlru_parser_loads_next_page():
     assert [review.external_id for review in result.reviews] == ["2", "1"]
 
 
+def test_vlru_parser_fetches_at_most_100_reviews():
+    def reviews_html(start: int, count: int) -> str:
+        items = "".join(
+            f'<li comment="{index}" data-timestamp="{1704067200 - index}"></li>'
+            for index in range(start, start + count)
+        )
+        return f'<ul id="CommentsList">{items}</ul>'
+
+    class LimitedClient(FakeVlRuPaginatedClient):
+        page_calls = 0
+
+        def get_comments_thread(self, company_slug: str) -> dict:
+            return {
+                "data": {
+                    "content": reviews_html(0, 60),
+                    "threadId": "thread-1",
+                    "lastCommentId": "59",
+                }
+            }
+
+        def get_comments_page(
+            self,
+            *,
+            company_slug: str,
+            thread_id: str,
+            before_comment_id: str,
+        ) -> dict:
+            self.page_calls += 1
+            return {
+                "data": {
+                    "content": reviews_html(60, 60),
+                    "lastCommentId": "119",
+                }
+            }
+
+    client = LimitedClient()
+    result = VlRuParser(client=client).parse("https://www.vl.ru/test-company")
+
+    assert len(result.reviews) == 100
+    assert client.page_calls == 1
+    assert result.reviews[-1].external_id == "99"
+
+
 @pytest.mark.parametrize(
     ("html", "expected"),
     [

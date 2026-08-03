@@ -12,6 +12,7 @@ from common_parser.models import (
     ReviewMedia,
 )
 from common_parser.parsing.dto import ParseResult, ParsedReview
+from common_parser.parsing.limits import get_review_limit
 
 
 @dataclass
@@ -22,7 +23,8 @@ class IngestionResult:
 
 
 class ReviewIngestionService:
-    MAX_REVIEWS_PER_PROVIDER = 100
+    def _get_review_limit(self, branch_provider: BranchProvider) -> int:
+        return get_review_limit(branch_provider.provider)
 
     def _make_content_hash(self, parsed_review: ParsedReview) -> str:
         if parsed_review.external_id:
@@ -77,6 +79,7 @@ class ReviewIngestionService:
     def _get_latest_reviews(
         self,
         reviews: list[ParsedReview],
+        limit: int,
     ) -> list[ParsedReview]:
         return sorted(
             reviews,
@@ -84,9 +87,13 @@ class ReviewIngestionService:
                 review.pub_date.timestamp() if review.pub_date else float("-inf")
             ),
             reverse=True,
-        )[:self.MAX_REVIEWS_PER_PROVIDER]
+        )[:limit]
 
-    def _prune_old_reviews(self, branch_provider: BranchProvider) -> None:
+    def _prune_old_reviews(
+        self,
+        branch_provider: BranchProvider,
+        limit: int,
+    ) -> None:
         review_ids_to_delete = list(
             Review.objects
             .filter(provider=branch_provider)
@@ -94,7 +101,7 @@ class ReviewIngestionService:
                 F("published_date").desc(nulls_last=True),
                 "-pk",
             )
-            .values_list("pk", flat=True)[self.MAX_REVIEWS_PER_PROVIDER:]
+            .values_list("pk", flat=True)[limit:]
         )
 
         if review_ids_to_delete:
@@ -102,7 +109,8 @@ class ReviewIngestionService:
 
     def save(self, branch_provider: BranchProvider, result: ParseResult) -> IngestionResult:
         created_count = 0
-        reviews_to_ingest = self._get_latest_reviews(result.reviews)
+        review_limit = self._get_review_limit(branch_provider)
+        reviews_to_ingest = self._get_latest_reviews(result.reviews, review_limit)
         skipped_count = len(result.reviews) - len(reviews_to_ingest)
 
         self._update_provider_stats(branch_provider, result)
@@ -132,7 +140,7 @@ class ReviewIngestionService:
 
             created_count += 1
 
-        self._prune_old_reviews(branch_provider)
+        self._prune_old_reviews(branch_provider, review_limit)
 
         return IngestionResult(
             parsed_count=len(result.reviews),

@@ -93,7 +93,10 @@ def test_yandex_parser_returns_normalized_result():
     assert result.avg_rating == 4.4
     assert len(result.reviews) == 3
 
-    review = result.reviews[0]
+    review = next(
+        review for review in result.reviews
+        if review.external_id == "review-1"
+    )
     assert review.external_id == "review-1"
     assert review.author_name == "Ivan"
     assert review.author_avatar_url == (
@@ -119,11 +122,11 @@ def test_yandex_parser_skips_duplicate_review_ids():
 
     result = parser.parse("https://yandex.ru/maps/org/1009077078/reviews/")
 
-    assert [review.external_id for review in result.reviews] == [
+    assert {review.external_id for review in result.reviews} == {
         "review-1",
         "review-2",
         "review-3",
-    ]
+    }
 
 
 def test_yandex_parser_uses_defaults_for_missing_optional_fields():
@@ -131,7 +134,10 @@ def test_yandex_parser_uses_defaults_for_missing_optional_fields():
 
     result = parser.parse("https://yandex.ru/maps/org/1009077078/reviews/")
 
-    review = result.reviews[2]
+    review = next(
+        review for review in result.reviews
+        if review.external_id == "review-3"
+    )
     assert review.external_id == "review-3"
     assert review.author_name == "Аноним"
     assert review.author_avatar_url is None
@@ -146,3 +152,39 @@ def test_yandex_parser_returns_none_when_average_rating_is_missing():
     parser = YandexParser(client=FakeYandexClient())
 
     assert parser._parse_avg_rating([{"params": {}, "reviews": []}]) is None
+
+
+def test_yandex_parser_returns_at_most_600_reviews():
+    class LargeResultClient(FakeYandexClient):
+        def get_all_review_results(self, source_url: str) -> list[dict]:
+            return [
+                {
+                    "params": {"count": 700, "totalPages": 14},
+                    "reviews": [
+                        {
+                            "reviewId": f"review-{index}",
+                            "author": {},
+                        }
+                        for index in range(650)
+                    ],
+                }
+            ]
+
+    result = YandexParser(client=LargeResultClient()).parse(
+        "https://yandex.ru/maps/org/123/reviews/"
+    )
+
+    assert result.external_count == 700
+    assert len(result.reviews) == 600
+
+
+def test_yandex_parser_sorts_reviews_by_date_descending():
+    result = YandexParser(client=FakeYandexClient()).parse(
+        "https://yandex.ru/maps/org/1009077078/reviews/"
+    )
+
+    assert [review.external_id for review in result.reviews] == [
+        "review-2",
+        "review-1",
+        "review-3",
+    ]

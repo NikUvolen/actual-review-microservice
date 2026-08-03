@@ -5,11 +5,13 @@ from bs4.element import Tag
 
 from common_parser.parsing.clients.vlru import VlRuClient
 from common_parser.parsing.dto import ParseResult, ParsedReview
+from common_parser.parsing.limits import get_review_limit
 from common_parser.parsing.providers.base import BaseReviewParser
 
 
 class VlRuParser(BaseReviewParser):
     provider = 'vlru'
+    max_reviews = get_review_limit(provider)
 
     def __init__(self, client: VlRuClient | None = None):
         self.client = client or VlRuClient()
@@ -141,14 +143,14 @@ class VlRuParser(BaseReviewParser):
         data = first_page.get('data') or {}
         avg_rating = self._parse_avg_rating(self.client.get_company_page(company_slug))
 
-        reviews = self._parse_reviews_html(data.get('content') or '')
+        reviews = self._parse_reviews_html(data.get('content') or '')[:self.max_reviews]
 
         thread_id = data.get('threadId')
         last_comment_id = data.get('lastCommentId')
 
         loaded_pages = 0
 
-        while thread_id and last_comment_id:
+        while thread_id and last_comment_id and len(reviews) < self.max_reviews:
             if max_pages is not None and loaded_pages >= max_pages:
                 break
 
@@ -163,7 +165,8 @@ class VlRuParser(BaseReviewParser):
             page_data = page.get('data') or {}
             page_reviews = self._parse_reviews_html(page_data.get('content') or '')
 
-            reviews.extend(page_reviews)
+            remaining = self.max_reviews - len(reviews)
+            reviews.extend(page_reviews[:remaining])
 
             new_last_comment_id = page_data.get('lastCommentId')
 

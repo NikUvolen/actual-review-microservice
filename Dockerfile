@@ -1,42 +1,31 @@
-FROM python:3.12
+FROM python:3.12-slim-bookworm
 
-RUN apt-get update && apt-get install -y \
-    wget \
-    fonts-liberation \
-    libasound2 \
-    libatk-bridge2.0-0 \
-    libatk1.0-0 \
-    libatspi2.0-0 \
-    libcairo2 \
-    libcups2 \
-    libcurl4 \
-    libdbus-1-3 \
-    libexpat1 \
-    libgbm1 \
-    libglib2.0-0 \
-    libgtk-3-0 \
-    libnspr4 \
-    libnss3 \
-    libpango-1.0-0 \
-    libvulkan1 \
-    libx11-6 \
-    libxcb1 \
-    libxcomposite1 \
-    libxdamage1 \
-    libxext6 \
-    libxfixes3 \
-    libxkbcommon0 \
-    libxrandr2 \
-    xdg-utils
+COPY --from=ghcr.io/astral-sh/uv:0.9.10 /uv /uvx /bin/
 
-WORKDIR /code/review_parser
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    UV_COMPILE_BYTECODE=1 \
+    UV_LINK_MODE=copy \
+    PATH="/app/.venv/bin:$PATH"
 
-ENV PYTHONDONTWRITEBYTECODE 1
+WORKDIR /app
 
-COPY requirements.txt /code/review_parser/
+COPY pyproject.toml uv.lock ./
+RUN uv sync --frozen --no-dev --no-install-project
 
-RUN pip install --no-cache-dir -r requirements.txt
-RUN python -m playwright install chromium
+RUN useradd --create-home --uid 1000 app
 
-COPY . /code/
-CMD ["python", "manage.py", "runserver", "0.0.0.0:8000"]
+COPY --chown=app:app review_parser ./review_parser
+COPY --chown=app:app docker ./docker
+
+RUN chmod +x /app/docker/entrypoint.sh \
+    && mkdir -p /app/logs /app/review_parser/staticfiles /var/lib/celery \
+    && chown -R app:app /app/logs /app/review_parser/staticfiles /var/lib/celery
+
+WORKDIR /app/review_parser
+
+USER app
+
+EXPOSE 8000
+
+CMD ["/app/docker/entrypoint.sh"]

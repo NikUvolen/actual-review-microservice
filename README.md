@@ -449,6 +449,76 @@ uv run pytest
 uv run python review_parser/manage.py makemigrations --check --dry-run
 ```
 
+## Production-деплой через Docker Compose
+
+Production-контур состоит из следующих контейнеров:
+
+- `nginx` принимает HTTP-запросы на порту `80` и отдаёт статику;
+- `web` запускает Django через Gunicorn, применяет миграции и собирает статику;
+- `celery` обрабатывает фоновые задачи с `concurrency=1`;
+- `celery_beat` ставит периодические задачи в очередь;
+- `db` хранит данные в PostgreSQL;
+- `redis` используется как брокер Celery.
+
+На сервере установить Git и Docker с Compose plugin, затем клонировать проект:
+
+```bash
+git clone <repository-url> actual-review-microservice
+cd actual-review-microservice
+```
+
+Создать production-конфигурацию:
+
+```bash
+cp .env_example .env
+openssl rand -hex 32
+```
+
+Результат `openssl` записать в `DJANGO_SECRET_KEY`. В `.env` также необходимо:
+
+- заменить `SERVER_IP` на реальный IP сервера;
+- задать отдельный надёжный `DB_PASSWORD`;
+- указать рабочий `TWOGIS_API_KEY`;
+- оставить `DJANGO_DEBUG=False`;
+- использовать `DB_HOST=db` и `CELERY_BROKER_URL=redis://redis:6379/0`.
+
+Собрать и запустить сервис:
+
+```bash
+docker compose up -d --build
+docker compose ps
+```
+
+Создать администратора:
+
+```bash
+docker compose exec web python manage.py createsuperuser
+```
+
+Просмотреть логи:
+
+```bash
+docker compose logs -f web celery celery_beat nginx
+```
+
+После запуска доступны:
+
+- `http://SERVER_IP/admin/`;
+- `http://SERVER_IP/swagger/`;
+- `http://SERVER_IP/api/v1/`.
+
+При обновлении приложения:
+
+```bash
+git pull
+docker compose up -d --build
+```
+
+PostgreSQL, Redis, статика, расписание Celery Beat и логи находятся в Docker
+volumes и сохраняются при пересоздании контейнеров. Команда
+`docker compose down -v` удаляет эти данные и не должна использоваться при
+обычном обновлении.
+
 ## Дедупликация
 
 Дедупликация выполняется отдельно внутри каждого `BranchProvider`.
@@ -472,6 +542,5 @@ provider + external_review_id
 - внутренние API внешних провайдеров могут измениться и потребовать обновления
   clients/parsers;
 - Google Maps, YouTube и VK Video пока не подключены к рабочему pipeline;
-- текущие Dockerfile и Docker Compose предназначены для разработки и требуют
-  переработки перед production-деплоем;
-- конфигурация production security, Gunicorn и Nginx пока не подготовлена.
+- HTTPS пока не настроен: после подключения домена необходимо выпустить TLS
+  сертификат и включить secure cookie/redirect параметры в `.env`.

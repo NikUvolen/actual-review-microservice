@@ -1,4 +1,6 @@
 import os
+from pathlib import Path
+
 from loguru import logger
 
 
@@ -18,6 +20,8 @@ def configure_logging() -> None:
 
     log_level = os.getenv("LOG_LEVEL", "INFO").upper()
     file_level = os.getenv("LOG_FILE_LEVEL", "DEBUG").upper()
+    log_dir = Path(os.getenv("LOG_DIR", "."))
+    log_dir.mkdir(parents=True, exist_ok=True)
 
     logger.remove()
 
@@ -29,7 +33,7 @@ def configure_logging() -> None:
     )
 
     logger.add(
-        "debug.log",
+        log_dir / "debug.log",
         level=file_level,
         format="{time} {level} {message}",
         enqueue=True,
@@ -38,4 +42,3 @@ def configure_logging() -> None:
     )
 
     _CONFIGURED = True
-

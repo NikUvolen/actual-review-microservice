@@ -1,5 +1,7 @@
 import pytest
 from django.contrib.auth import get_user_model
+from django.core.exceptions import PermissionDenied
+from django.test import override_settings
 
 from common_parser.models import Branch, BranchProvider, Organization
 from common_parser.parsing.ingestion import IngestionResult
@@ -37,6 +39,7 @@ def test_parsing_orchestrator_gets_branch_provider(branch_provider):
 
 
 @pytest.mark.django_db
+@override_settings(DEBUG=True)
 def test_parsing_orchestrator_runs_sync_parsing(branch_provider):
     class FakeParsingService:
         called_with: BranchProvider | None = None
@@ -61,6 +64,15 @@ def test_parsing_orchestrator_runs_sync_parsing(branch_provider):
     assert result.parsed_count == 5
     assert result.created_count == 3
     assert result.skipped_count == 2
+
+
+@pytest.mark.django_db
+@override_settings(DEBUG=False)
+def test_parsing_orchestrator_blocks_sync_parsing_outside_debug(
+    branch_provider,
+):
+    with pytest.raises(PermissionDenied, match='debug mode'):
+        ParsingOrchestrator().parse_branch_provider_sync(branch_provider.pk)
 
 
 @pytest.mark.django_db

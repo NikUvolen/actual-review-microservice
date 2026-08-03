@@ -2,6 +2,8 @@ from typing import cast
 
 from celery import Celery, current_app
 from celery.result import AsyncResult
+from django.conf import settings
+from django.core.exceptions import PermissionDenied
 from django.shortcuts import get_object_or_404
 
 from common_parser.models import Branch, BranchProvider
@@ -38,6 +40,11 @@ class ParsingOrchestrator:
         self,
         branch_provider_id: int,
     ) -> IngestionResult:
+        if not settings.DEBUG:
+            raise PermissionDenied(
+                'Synchronous parsing is available only in debug mode.'
+            )
+
         branch_provider = self.get_branch_provider(branch_provider_id)
 
         return self.parsing_service.parse_and_save_provider_reviews(

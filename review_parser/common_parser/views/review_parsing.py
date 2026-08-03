@@ -17,7 +17,13 @@ from common_parser.services.parsing_orchestrator import ParsingOrchestrator
 # вернуть task_id + status = Pending
 class BranchProviderParseAPIView(APIView):
     def post(self, request, branch_provider_id: int):
-        task_id = ParsingOrchestrator().parse_branch_provider_async(branch_provider_id)
+        branch_provider = get_object_or_404(
+            BranchProvider, 
+            pk=branch_provider_id,
+            branch__organization=request.user.organization
+        )
+
+        task_id = ParsingOrchestrator().parse_branch_provider_async(branch_provider.pk)
 
         serializer = ParsingTaskStartSerializer(
             {
@@ -50,7 +56,11 @@ class ParsingTaskStatusAPIView(APIView):
 
 class BranchProviderReviewsAPIView(APIView):
     def get(self, request, branch_provider_id: int):
-        branch_provider = get_object_or_404(BranchProvider, pk=branch_provider_id)
+        branch_provider = get_object_or_404(
+            BranchProvider, 
+            pk=branch_provider_id,
+            branch__organization=request.user.organization
+        )
 
         reviews = (
             Review.objects

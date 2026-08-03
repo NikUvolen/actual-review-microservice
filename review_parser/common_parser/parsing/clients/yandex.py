@@ -18,6 +18,7 @@ from common_parser.parsing.exceptions import (
     InvalidSourceUrlError,
     ProviderRequestError
 )
+from common_parser.parsing.limits import get_review_limit
 
 
 # YandexClient
@@ -29,6 +30,8 @@ from common_parser.parsing.exceptions import (
 # - вернуть сырые reviewResults / raw reviews
 class YandexClient:
     provider = "yandex"
+    max_reviews = get_review_limit(provider)
+    page_size = 50
 
     default_headers = {
         "User-Agent": (
@@ -178,6 +181,7 @@ class YandexClient:
         query = {
             "tab": "reviews",
             "page": str(page),
+            "reviews[sort]": "by_time",
         }
         path = f"/maps/org/{business_id}/reviews"
 
@@ -289,7 +293,11 @@ class YandexClient:
         params = first_page.get("params", {})
         total_pages = params.get("totalPages") or 1
 
-        pages_to_fetch = min(int(total_pages), max_pages)
+        max_allowed_pages = min(
+            max_pages,
+            (self.max_reviews + self.page_size - 1) // self.page_size,
+        )
+        pages_to_fetch = min(int(total_pages), max_allowed_pages)
 
         results = [first_page]
 
@@ -333,5 +341,8 @@ class YandexClient:
                     seen_review_ids.add(review_id)
 
                 reviews.append(review)
+
+                if len(reviews) >= self.max_reviews:
+                    return reviews
 
         return reviews

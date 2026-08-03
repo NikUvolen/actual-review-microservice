@@ -1,5 +1,4 @@
 import pytest
-from django.utils import timezone
 
 from common_parser.models import Branch, BranchProvider, Organization
 from common_parser.parsing.ingestion import IngestionResult
@@ -132,32 +131,20 @@ def test_parsing_orchestrator_enqueues_all_branch_provider_tasks(
 
 
 @pytest.mark.django_db
-def test_parsing_orchestrator_enqueues_only_due_branch_providers(
+def test_parsing_orchestrator_enqueues_all_active_branch_providers(
     monkeypatch,
     branch_provider,
 ):
-    now = timezone.now()
-    branch_provider.next_parse_date = now - timezone.timedelta(minutes=1)
-    branch_provider.save(update_fields=["next_parse_date"])
-
     inactive_provider = BranchProvider.objects.create(
         branch=branch_provider.branch,
         provider="yandex",
         source_url="https://yandex.ru/maps/org/1009077078/reviews/",
         is_active=False,
-        next_parse_date=now - timezone.timedelta(minutes=1),
     )
-    future_provider = BranchProvider.objects.create(
+    second_active_provider = BranchProvider.objects.create(
         branch=branch_provider.branch,
         provider="vlru",
         source_url="https://www.vl.ru/test-company",
-        next_parse_date=now + timezone.timedelta(hours=1),
-    )
-    no_schedule_provider = BranchProvider.objects.create(
-        branch=branch_provider.branch,
-        provider="google",
-        source_url="https://example.com/google",
-        next_parse_date=None,
     )
 
     class FakeTaskResult:
@@ -173,19 +160,17 @@ def test_parsing_orchestrator_enqueues_only_due_branch_providers(
 
     monkeypatch.setattr(parsing_orchestrator, "celery_app", FakeCeleryApp())
 
-    task_ids = ParsingOrchestrator().parse_due_branch_providers_async()
+    task_ids = ParsingOrchestrator().parse_active_branch_providers_async()
 
     assert task_ids == [
         f"task-{branch_provider.pk}",
-        f"task-{no_schedule_provider.pk}",
+        f"task-{second_active_provider.pk}",
     ]
     assert FakeCeleryApp.calls == [
         ("parse_branch_reviews_async", [branch_provider.pk]),
-        ("parse_branch_reviews_async", [no_schedule_provider.pk]),
+        ("parse_branch_reviews_async", [second_active_provider.pk]),
     ]
     assert inactive_provider.pk is not None
-    assert future_provider.pk is not None
-    assert no_schedule_provider.pk is not None
 
 
 def test_parsing_orchestrator_returns_async_result(monkeypatch):

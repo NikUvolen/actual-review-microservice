@@ -4,11 +4,13 @@ from urllib.parse import urlencode
 
 from common_parser.parsing.clients.yandex import YandexClient
 from common_parser.parsing.dto import ParseResult, ParsedReview
+from common_parser.parsing.limits import get_review_limit
 from common_parser.parsing.providers.base import BaseReviewParser
 
 
 class YandexParser(BaseReviewParser):
     provider = 'yandex'
+    max_reviews = get_review_limit(provider)
 
     def __init__(self, client: YandexClient | None = None):
         self.client = client or YandexClient()
@@ -138,7 +140,13 @@ class YandexParser(BaseReviewParser):
                     self._parse_review(raw_review)
                 )
 
-        return parsed_reviews
+        return sorted(
+            parsed_reviews,
+            key=lambda review: (
+                review.pub_date.timestamp() if review.pub_date else float('-inf')
+            ),
+            reverse=True,
+        )[:self.max_reviews]
 
     def parse(self, source_url: str) -> ParseResult:
         review_results_pages = self.client.get_all_review_results(source_url)

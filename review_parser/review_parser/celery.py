@@ -1,14 +1,12 @@
+from datetime import timedelta
 import os
+
 from celery import Celery
 from celery.schedules import crontab
 from dotenv import load_dotenv
-from datetime import timedelta
 
 
 load_dotenv()
-
-PARSE_BEAT_INTERVAL_MINUTES = int(os.getenv('CELERY_BEAT_PARSE_INTERVAL_MINUTES', '1'))
-
 os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'review_parser.settings')
 
 app = Celery('review_parser')
@@ -28,9 +26,9 @@ app.conf.broker_transport_options = {
 }
 # Настройка периодических задач
 app.conf.beat_schedule = {
-    'enqueue-due-branch-provider-parsing': {
-        'task': 'enqueue_due_branch_provider_parsing',
-        'schedule': crontab(minute=f'*/{PARSE_BEAT_INTERVAL_MINUTES}'),
+    'enqueue-scheduled-branch-provider-parsing': {
+        'task': 'enqueue_scheduled_branch_provider_parsing',
+        'schedule': crontab(minute=0, hour=6, day_of_week='tue,sat'),
     },
     # Disable cleanup task by scheduling to run every ~1000 years
     'backend_cleanup': {

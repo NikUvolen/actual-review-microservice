@@ -2,12 +2,24 @@
 
 {% block object-tools-items %}
     {{ block.super }}
-    {% if show_sync_parse_button and original %}
+
+    {% if original %}
+        {% if show_sync_parse_button %}
+            <li>
+                <form method="post" action="{% url 'admin:common_parser_branchprovider_parse_sync' original.pk %}">
+                    {% csrf_token %}
+                    <button type="submit" class="historylink" onclick="return confirm('Запустить синхронный парсинг?');">
+                        Запустить без Celery
+                    </button>
+                </form>
+            </li>
+        {% endif %}
+
         <li>
-            <form method="post" action="{% url 'admin:common_parser_branchprovider_parse_sync' original.pk %}">
+            <form method="post" action="{% url 'admin:common_parser_branchprovider_parse_async' original.pk %}">
                 {% csrf_token %}
-                <button type="submit" class="historylink" onclick="return confirm('Запустить синхронный парсинг?');">
-                    Запустить без Celery
+                <button type="submit" class="historylink" onclick="return confirm('Запустить Celery парсинг?');">
+                    Запустить через Celery
                 </button>
             </form>
         </li>

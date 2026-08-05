@@ -11,6 +11,7 @@ from nested_admin import (
     NestedStackedInline, # type: ignore
     NestedTabularInline, # type: ignore
 )
+
 from common_parser.models import (
     Organization, 
     Branch,
@@ -80,10 +81,15 @@ class BranchProviderAdmin(admin.ModelAdmin):
         urls = super().get_urls()
         custom_urls = [
             path(
-                '<path:object_id>/parse-sync/',
+                '<int:object_id>/parse-sync/',
                 self.admin_site.admin_view(self.parse_sync_view),
                 name='common_parser_branchprovider_parse_sync',
             ),
+            path(
+                '<int:object_id>/parse-async/',
+                self.admin_site.admin_view(self.parse_async_view),
+                name='common_parser_branchprovider_parse_async',
+            )
         ]
         return custom_urls + urls
 
@@ -140,6 +146,58 @@ class BranchProviderAdmin(admin.ModelAdmin):
                     f'Парсинг завершён: обработано {result.parsed_count}, '
                     f'создано {result.created_count}, пропущено {result.skipped_count}.'
                 ),
+                level=messages.SUCCESS,
+            )
+
+        return redirect(
+            reverse(
+                'admin:common_parser_branchprovider_change',
+                args=[branch_provider.pk],
+            )
+        )
+
+    def parse_async_view(
+        self, 
+        request: HttpRequest, 
+        object_id: str
+    ) -> HttpResponse:
+        if request.method != 'POST':
+            return HttpResponseNotAllowed(['POST'])
+        
+        branch_provider = self.get_object(request, object_id)
+
+        if branch_provider is None:
+            self.message_user(
+                request,
+                'Branch provider not found.',
+                level=messages.ERROR,
+            )
+            return redirect(
+                reverse(
+                    'admin:common_parser_branchprovider_changelist',
+                )
+            )
+
+        try:
+            task_id = ParsingOrchestrator().parse_branch_provider_async(
+                branch_provider.pk
+            )
+        except Exception as exc:
+            logger.exception(
+                'Failed to start branch provider parsing task: '
+                'branch_provider_id=%s provider=%s',
+                branch_provider.pk,
+                branch_provider.provider,
+            )
+            self.message_user(
+                request,
+                f'Failed to start Celery parsing task: {exc}',
+                level=messages.ERROR,
+            )
+        else:
+            self.message_user(
+                request,
+                f'Started parsing task: task_id={task_id}',
                 level=messages.SUCCESS,
             )
 

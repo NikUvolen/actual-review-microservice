@@ -28,7 +28,7 @@ app.conf.broker_transport_options = {
 app.conf.beat_schedule = {
     'enqueue-scheduled-branch-provider-parsing': {
         'task': 'enqueue_scheduled_branch_provider_parsing',
-        'schedule': crontab(minute=0, hour=6, day_of_week='tue,sat'),
+        'schedule': crontab(minute='0', hour='6', day_of_week='tue,sat'),
     },
     # Disable cleanup task by scheduling to run every ~1000 years
     'backend_cleanup': {

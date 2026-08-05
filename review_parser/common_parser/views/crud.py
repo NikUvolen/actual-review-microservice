@@ -114,7 +114,11 @@ class BranchDetailAPIView(
             .prefetch_related(
                 Prefetch(
                     'branch_providers',
-                    queryset=BranchProvider.objects.filter(is_active=True),
+                    queryset=(
+                        BranchProvider.objects
+                        .filter(is_active=True)
+                        .select_related('stats')
+                    )
                 )
             )
         )

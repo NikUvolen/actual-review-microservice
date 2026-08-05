@@ -197,12 +197,24 @@ def test_orchestrator_skips_providers_of_inactive_branches(
 def test_user_can_create_provider_for_own_branch(
     authenticated_client,
     organization_context,
+    monkeypatch,
 ):
     _, organization, _ = organization_context
     branch = Branch.objects.create(
         organization=organization,
         city='Irkutsk',
         address='Own address',
+    )
+    enqueued_branch_provider_ids: list[int] = []
+
+    class FakeParsingOrchestrator:
+        def parse_branch_provider_async(self, branch_provider_id: int) -> str:
+            enqueued_branch_provider_ids.append(branch_provider_id)
+            return 'task-123'
+
+    monkeypatch.setattr(
+        'common_parser.views.crud.ParsingOrchestrator',
+        FakeParsingOrchestrator,
     )
 
     response = authenticated_client.post(
@@ -219,6 +231,54 @@ def test_user_can_create_provider_for_own_branch(
     assert response.status_code == 201
     assert provider.provider == '2gis'
     assert provider.is_active is True
+    assert response.data['provider']['id'] == provider.pk
+    assert response.data['task_id'] == 'task-123'
+    assert response.data['status'] == 'PENDING'
+    assert enqueued_branch_provider_ids == [provider.pk]
+
+
+@pytest.mark.django_db
+def test_provider_create_keeps_provider_when_initial_parsing_task_fails(
+    authenticated_client,
+    organization_context,
+    monkeypatch,
+    caplog,
+):
+    _, organization, _ = organization_context
+    branch = Branch.objects.create(
+        organization=organization,
+        city='Irkutsk',
+        address='Own address',
+    )
+
+    class FailingParsingOrchestrator:
+        def parse_branch_provider_async(self, branch_provider_id: int) -> str:
+            raise RuntimeError('Redis is unavailable')
+
+    monkeypatch.setattr(
+        'common_parser.views.crud.ParsingOrchestrator',
+        FailingParsingOrchestrator,
+    )
+
+    with caplog.at_level('ERROR', logger='common_parser.views.crud'):
+        response = authenticated_client.post(
+            reverse('branch-provider-list', kwargs={'branch_id': branch.pk}),
+            {
+                'provider': '2gis',
+                'source_url': 'https://2gis.ru/irkutsk/firm/123',
+            },
+            format='json',
+        )
+
+    provider = BranchProvider.objects.get(branch=branch)
+    assert response.status_code == 201
+    assert response.data['provider']['id'] == provider.pk
+    assert response.data['task_id'] is None
+    assert response.data['status'] == 'NOT_STARTED'
+    assert (
+        'Failed to start initial parsing task for branch_provider_id='
+        in caplog.text
+    )
 
 
 @pytest.mark.django_db

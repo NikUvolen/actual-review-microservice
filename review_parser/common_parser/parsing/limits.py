@@ -3,7 +3,7 @@ DEFAULT_REVIEW_LIMIT = 100
 REVIEW_LIMITS_BY_PROVIDER = {
     "2gis": 100,
     "vlru": 100,
-    "yandex": 600,
+    "yandex": 100,
 }
 
 

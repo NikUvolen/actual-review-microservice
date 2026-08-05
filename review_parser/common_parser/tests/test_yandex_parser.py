@@ -154,18 +154,19 @@ def test_yandex_parser_returns_none_when_average_rating_is_missing():
     assert parser._parse_avg_rating([{"params": {}, "reviews": []}]) is None
 
 
-def test_yandex_parser_returns_at_most_600_reviews():
+def test_yandex_parser_returns_at_most_100_reviews():
     class LargeResultClient(FakeYandexClient):
         def get_all_review_results(self, source_url: str) -> list[dict]:
             return [
                 {
-                    "params": {"count": 700, "totalPages": 14},
+                    "params": {"count": 150, "totalPages": 3},
                     "reviews": [
                         {
                             "reviewId": f"review-{index}",
                             "author": {},
+                            "updatedTime": f"2026-06-{(index % 28) + 1:02d}T00:00:00.000Z",
                         }
-                        for index in range(650)
+                        for index in range(150)
                     ],
                 }
             ]
@@ -174,8 +175,8 @@ def test_yandex_parser_returns_at_most_600_reviews():
         "https://yandex.ru/maps/org/123/reviews/"
     )
 
-    assert result.external_count == 700
-    assert len(result.reviews) == 600
+    assert result.external_count == 150
+    assert len(result.reviews) == 100
 
 
 def test_yandex_parser_sorts_reviews_by_date_descending():

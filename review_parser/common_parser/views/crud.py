@@ -1,8 +1,10 @@
+import logging
 from django.db import transaction
 from django.db.models import Prefetch
 from django.shortcuts import get_object_or_404
-from rest_framework import generics
+from rest_framework import generics, status
 from rest_framework.request import Request
+from rest_framework.response import Response
 from drf_yasg.utils import swagger_auto_schema
 
 from common_parser.models import Branch, BranchProvider, Organization
@@ -12,6 +14,10 @@ from common_parser.serializers import (
     BranchCreateSerializer,
     OrganizationSerializer,
 )
+from common_parser.services.parsing_orchestrator import ParsingOrchestrator
+
+
+logger = logging.getLogger(__name__)
 
 
 class OrganizationAccessMixin:
@@ -169,8 +175,34 @@ class BranchProviderListCreateAPIView(
             context['branch'] = self.get_branch()
         return context
 
-    def perform_create(self, serializer):
-        serializer.save(branch=self.get_branch())
+    def create(self, request, *args, **kwargs):
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        branch_provider = serializer.save(branch=self.get_branch())
+
+        try:
+            task_id = ParsingOrchestrator().parse_branch_provider_async(
+                branch_provider.pk
+            )
+        except Exception as e:
+            logger.exception(
+                'Failed to start initial parsing task for branch_provider_id=%s\n%s',
+                branch_provider.pk,
+                e,
+            )
+            task_id = None
+
+        response_serializer = self.get_serializer(branch_provider)
+
+        return Response(
+            {
+                'provider': response_serializer.data,
+                'task_id': task_id,
+                'status': 'NOT_STARTED' if task_id is None else 'PENDING',
+            },
+            status=status.HTTP_201_CREATED,
+        )
 
 
 class BranchProviderDetailAPIView(

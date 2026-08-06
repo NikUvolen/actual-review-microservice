@@ -18,7 +18,7 @@ def test_yandex_client_builds_page_url_sorted_by_time():
     assert query["reviews[sort]"] == ["by_time"]
 
 
-def test_yandex_client_fetches_at_most_12_pages(monkeypatch):
+def test_yandex_client_fetches_at_most_2_pages_for_review_limit(monkeypatch):
     client = YandexClient()
     requested_pages: list[int] = []
 
@@ -43,5 +43,5 @@ def test_yandex_client_fetches_at_most_12_pages(monkeypatch):
 
     results = client.get_all_review_results("https://yandex.ru/maps/org/123/reviews/")
 
-    assert len(results) == 12
-    assert requested_pages == list(range(1, 13))
+    assert len(results) == 2
+    assert requested_pages == [1, 2]

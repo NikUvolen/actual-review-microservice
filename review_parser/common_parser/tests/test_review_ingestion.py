@@ -184,7 +184,7 @@ def test_review_ingestion_keeps_latest_100_reviews_per_provider(
 
 
 @pytest.mark.django_db
-def test_review_ingestion_keeps_latest_600_yandex_reviews(
+def test_review_ingestion_keeps_latest_100_yandex_reviews(
     branch_provider: BranchProvider,
 ):
     branch_provider.provider = "yandex"
@@ -216,11 +216,12 @@ def test_review_ingestion_keeps_latest_600_yandex_reviews(
     )
 
     assert ingestion_result.parsed_count == 605
-    assert ingestion_result.created_count == 600
-    assert ingestion_result.skipped_count == 5
-    assert len(stored_external_ids) == 600
-    assert "yandex-review-0" not in stored_external_ids
-    assert "yandex-review-604" in stored_external_ids
+    assert ingestion_result.created_count == 100
+    assert ingestion_result.skipped_count == 505
+    assert len(stored_external_ids) == 100
+    assert stored_external_ids == {
+        f"yandex-review-{index}" for index in range(505, 605)
+    }
 
 
 @pytest.mark.django_db

@@ -282,10 +282,10 @@ class YandexClient:
         max_pages: int = 12,
     ) -> list[dict[str, Any]]:
         """
-        Return raw reviewResults blocks for all available pages up to max_pages.
+        Return raw reviewResults blocks up to both max_pages and max_reviews.
 
-        Yandex exposes up to 12 pages by public HTML pagination in observed
-        tests, which is 600 reviews with the current page size of 50.
+        The review limit is converted to a page limit using the configured
+        page size, so a limit of 100 reviews requests at most two pages.
         """
         resolved_url, business_id = self._resolve_source(source_url)
         first_page = self.get_reviews_page(resolved_url, business_id, page=1)

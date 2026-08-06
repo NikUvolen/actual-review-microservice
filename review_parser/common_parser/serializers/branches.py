@@ -1,8 +1,10 @@
 from rest_framework import serializers
+from django.core.exceptions import ValidationError as DjangoValidationError
 from urllib.parse import urlsplit
 
 from common_parser.models import Branch, BranchProvider, ProviderStat
 from common_parser.serializers.organizations import OrganizationSerializer
+from common_parser.validators import validate_twogis_source_url
 
 
 class ProviderStatSerializer(serializers.ModelSerializer):
@@ -52,6 +54,14 @@ class BranchProviderSerializer(serializers.ModelSerializer):
                 raise serializers.ValidationError({
                     'source_url': f'URL does not match provider {provider}.'
                 })
+
+            if provider == '2gis':
+                try:
+                    validate_twogis_source_url(source_url)
+                except DjangoValidationError as exc:
+                    raise serializers.ValidationError({
+                        'source_url': exc.messages[0]
+                    }) from exc
 
         branch = self.instance.branch if self.instance else self.context.get('branch')
         if branch and provider and source_url:

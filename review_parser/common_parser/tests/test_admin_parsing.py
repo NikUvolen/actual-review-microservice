@@ -95,3 +95,33 @@ def test_admin_sync_parsing_is_blocked_outside_debug(client, admin_context):
     response = client.post(parse_url)
 
     assert response.status_code == 403
+
+
+@pytest.mark.django_db
+def test_admin_rejects_twogis_url_without_numeric_firm_id(
+    client,
+    admin_context,
+):
+    admin_user, branch_provider = admin_context
+    client.force_login(admin_user)
+
+    change_url = reverse(
+        'admin:common_parser_branchprovider_change',
+        args=[branch_provider.pk],
+    )
+    response = client.post(
+        change_url,
+        {
+            'branch': branch_provider.branch_id,
+            'provider': '2gis',
+            'source_url': 'https://2gis.ru/irkutsk/search/company',
+            'external_place_id': '',
+            'is_active': 'on',
+        },
+    )
+
+    assert response.status_code == 200
+    assert '2GIS URL must contain a numeric firm ID' in response.content.decode()
+
+    branch_provider.refresh_from_db()
+    assert branch_provider.source_url == 'https://2gis.ru/irkutsk/firm/123'

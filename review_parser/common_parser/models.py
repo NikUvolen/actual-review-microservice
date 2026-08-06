@@ -1,6 +1,9 @@
 from django.db import models
 from django.utils import timezone
 from django.conf import settings
+from django.core.exceptions import ValidationError
+
+from common_parser.validators import validate_twogis_source_url
 
 
 class Organization(models.Model):
@@ -74,6 +77,14 @@ class BranchProvider(models.Model):
                 name='unique_branch_provider_source_url'
             )
         ]
+
+    def clean(self) -> None:
+        super().clean()
+        if self.provider == '2gis' and self.source_url:
+            try:
+                validate_twogis_source_url(self.source_url)
+            except ValidationError as exc:
+                raise ValidationError({'source_url': exc.messages}) from exc
 
     def mark_as_parsed(self) -> None:
         self.last_parse_date = timezone.now()

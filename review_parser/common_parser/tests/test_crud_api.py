@@ -307,6 +307,53 @@ def test_provider_rejects_url_from_another_domain(
 
 
 @pytest.mark.django_db
+@pytest.mark.parametrize(
+    'source_url',
+    (
+        'https://2gis.ru/irkutsk/search/company',
+        'https://2gis.ru/irkutsk/firm/not-a-number',
+    ),
+)
+def test_provider_rejects_twogis_url_without_numeric_firm_id(
+    authenticated_client,
+    organization_context,
+    monkeypatch,
+    source_url,
+):
+    _, organization, _ = organization_context
+    branch = Branch.objects.create(
+        organization=organization,
+        city='Irkutsk',
+        address='Own address',
+    )
+    enqueued_provider_ids: list[int] = []
+
+    class FakeParsingOrchestrator:
+        def parse_branch_provider_async(self, branch_provider_id: int) -> str:
+            enqueued_provider_ids.append(branch_provider_id)
+            return 'task-123'
+
+    monkeypatch.setattr(
+        'common_parser.views.crud.ParsingOrchestrator',
+        FakeParsingOrchestrator,
+    )
+
+    response = authenticated_client.post(
+        reverse('branch-provider-list', kwargs={'branch_id': branch.pk}),
+        {
+            'provider': '2gis',
+            'source_url': source_url,
+        },
+        format='json',
+    )
+
+    assert response.status_code == 400
+    assert 'source_url' in response.data
+    assert BranchProvider.objects.filter(branch=branch).exists() is False
+    assert enqueued_provider_ids == []
+
+
+@pytest.mark.django_db
 def test_user_cannot_create_provider_for_foreign_branch(
     authenticated_client,
     organization_context,

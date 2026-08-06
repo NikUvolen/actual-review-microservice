@@ -141,6 +141,12 @@ class BranchProviderSummarySerializer(serializers.ModelSerializer):
         source='stats.last_parse_date',
         read_only=True,
     )
+    stored_review_count = serializers.IntegerField(read_only=True)
+    returned_count = serializers.SerializerMethodField()
+
+    def get_returned_count(self, instance: BranchProvider) -> int:
+        returned_counts = self.context.get('returned_counts', {})
+        return returned_counts.get(instance.pk, 0)
 
     class Meta:
         model = BranchProvider
@@ -150,4 +156,6 @@ class BranchProviderSummarySerializer(serializers.ModelSerializer):
             'source_url',
             'external_rating_avg',
             'last_parse_date',
+            'stored_review_count',
+            'returned_count',
         )

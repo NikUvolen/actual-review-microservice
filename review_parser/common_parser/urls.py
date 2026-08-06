@@ -42,7 +42,7 @@ urlpatterns = [
         name='branch-provider-detail',
     ),
     path(
-        'branch_providers/<int:branch_provider_id>/parse/',
+        'branch-providers/<int:branch_provider_id>/parse/',
         BranchProviderParseAPIView.as_view(),
         name='branch-provider-parse'
     ),
@@ -52,9 +52,9 @@ urlpatterns = [
         name='branch-reviews',
     ),
     path(
-            'branch_providers/<int:branch_provider_id>/reviews/',
-            BranchProviderReviewsAPIView.as_view(),
-            name='branch-provider-reviews'
+        'branch-providers/<int:branch_provider_id>/reviews/',
+        BranchProviderReviewsAPIView.as_view(),
+        name='branch-provider-reviews'
     ),
     path(
         'parsing-tasks/<str:task_id>/',

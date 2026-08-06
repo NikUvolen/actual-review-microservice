@@ -126,3 +126,28 @@ class BranchSerializer(serializers.ModelSerializer):
                 })
 
         return attrs
+
+
+class BranchProviderSummarySerializer(serializers.ModelSerializer):
+    external_rating_avg = serializers.FloatField(
+        source='stats.external_rating_avg',
+        read_only=True,
+    )
+    # external_review_count = serializers.IntegerField(
+    #     source='stats.external_review_count',
+    #     read_only=True,
+    # )
+    last_parse_date = serializers.DateTimeField(
+        source='stats.last_parse_date',
+        read_only=True,
+    )
+
+    class Meta:
+        model = BranchProvider
+        fields = (
+            'id',
+            'provider',
+            'source_url',
+            'external_rating_avg',
+            'last_parse_date',
+        )

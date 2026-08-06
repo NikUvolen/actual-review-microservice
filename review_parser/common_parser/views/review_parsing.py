@@ -11,9 +11,14 @@ from common_parser.serializers import (
     ReviewFilterSerializer,
     ReviewSerializer,
     ParsingTaskStartSerializer, 
-    ParsingTaskStatusSerializer
+    ParsingTaskStatusSerializer,
+    BranchProviderSummarySerializer
 )
 from common_parser.services.parsing_orchestrator import ParsingOrchestrator
+from common_parser.api_settings import (
+    DEFAULT_REVIEW_PAGE_SIZE,
+    MAX_REVIEW_PAGE_SIZE,
+)
 
 
 PROVIDER_PARAMETER = openapi.Parameter(
@@ -51,9 +56,9 @@ PAGE_SIZE_PARAMETER = openapi.Parameter(
 
 
 class ReviewPagination(PageNumberPagination):
-    page_size = 20
+    page_size = DEFAULT_REVIEW_PAGE_SIZE
     page_size_query_param = 'page_size'
-    max_page_size = 100
+    max_page_size = MAX_REVIEW_PAGE_SIZE
 
 
 class ReviewListMixin:
@@ -142,15 +147,23 @@ class BranchProviderReviewsAPIView(ReviewListMixin, APIView):
             is_active=True,
         )
 
+        provider_data = BranchProviderSummarySerializer(
+            branch_provider, many=False
+        ).data
+
         reviews = (
             Review.objects
             .filter(provider=branch_provider)
+            .select_related('provider')
             .prefetch_related("media")
             .order_by("-published_date")
         )
 
         reviews = self.get_filtered_reviews(request, reviews)
-        return self.get_paginated_response(request, reviews)
+        response = self.get_paginated_response(request, reviews)
+        response.data['provider'] = provider_data
+
+        return response
 
 
 class BranchReviewsAPIView(ReviewListMixin, APIView):
@@ -171,6 +184,16 @@ class BranchReviewsAPIView(ReviewListMixin, APIView):
             is_active=True,
         )
 
+        branch_providers = (
+            BranchProvider.objects
+            .filter(branch=branch, is_active=True)
+            .select_related('stats')
+            .order_by('provider', 'pk')
+        )
+        providers_data = BranchProviderSummarySerializer(
+            branch_providers, many=True
+        ).data
+
         reviews = (
             Review.objects
             .filter(provider__branch=branch)
@@ -180,4 +203,7 @@ class BranchReviewsAPIView(ReviewListMixin, APIView):
         )
 
         reviews = self.get_filtered_reviews(request, reviews)
-        return self.get_paginated_response(request, reviews)
+        response = self.get_paginated_response(request, reviews)
+        response.data['providers'] = providers_data
+
+        return response

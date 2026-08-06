@@ -111,6 +111,7 @@ dependencies = [
 
 [dependency-groups]
 dev = [
+    "django-debug-toolbar>=7.0.0",
     "django-stubs>=6.0.7",
     "djangorestframework-stubs>=3.17.1",
 ]

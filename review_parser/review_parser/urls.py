@@ -6,6 +6,7 @@ from rest_framework_simplejwt.views import (
 )
 
 from .yasg import urlpatterns as doc_urls
+from django.conf import settings
 
 
 urlpatterns = [
@@ -23,3 +24,8 @@ urlpatterns = [
         name='token_refresh'
     ),
 ] + doc_urls
+
+if settings.DEBUG:
+    urlpatterns += [
+        path('__debug__/', include('debug_toolbar.urls')),
+    ]

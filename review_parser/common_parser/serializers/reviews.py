@@ -16,19 +16,62 @@ REVIEW_ORDERINGS = (
     '-rating',
     'rating',
 )
+DATE_REVIEW_ORDERINGS = (
+    '-published_date',
+    'published_date',
+)
 
 
-class ReviewFilterSerializer(serializers.Serializer):
-    provider = serializers.ChoiceField(
-        choices=BranchProvider.PROVIDER_CHOICES,
-        required=False,
-    )
+class BaseReviewFilterSerializer(serializers.Serializer):
     date_from = serializers.DateField(required=False)
     date_to = serializers.DateField(required=False)
     page_size = serializers.IntegerField(
         required=False,
         min_value=1,
         max_value=MAX_REVIEW_PAGE_SIZE,
+    )
+
+    def validate(self, attrs):
+        date_from = attrs.get('date_from')
+        date_to = attrs.get('date_to')
+
+        if date_from and date_to and date_from > date_to:
+            raise serializers.ValidationError(
+                {'date_to': 'Must be greater than or equal to date_from.'}
+            )
+
+        return attrs
+
+
+class BranchProviderReviewsFilterSerializer(BaseReviewFilterSerializer):
+    mode = serializers.HiddenField(default=DEFAULT_REVIEW_MODE)
+    ordering = serializers.ChoiceField(
+        choices=DATE_REVIEW_ORDERINGS,
+        default=DEFAULT_REVIEW_ORDERING,
+    )
+
+    def validate(self, attrs):
+        unsupported_parameters = (
+            'provider',
+            'mode',
+            'interleave_size',
+            'provider_order',
+        )
+        errors = {
+            parameter: 'Unavailable for one provider.'
+            for parameter in unsupported_parameters
+            if parameter in self.initial_data
+        }
+        if errors:
+            raise serializers.ValidationError(errors)
+
+        return super().validate(attrs)
+
+
+class BranchReviewsFilterSerializer(BaseReviewFilterSerializer):
+    provider = serializers.ChoiceField(
+        choices=BranchProvider.PROVIDER_CHOICES,
+        required=False,
     )
     mode = serializers.ChoiceField(
         choices=REVIEW_MODES,
@@ -75,13 +118,7 @@ class ReviewFilterSerializer(serializers.Serializer):
         return provider_order
 
     def validate(self, attrs):
-        date_from = attrs.get('date_from')
-        date_to = attrs.get('date_to')
-
-        if date_from and date_to and date_from > date_to:
-            raise serializers.ValidationError(
-                {'date_to': 'Must be greater than or equal to date_from.'}
-            )
+        attrs = super().validate(attrs)
 
         mode = attrs['mode']
         interleave_parameters = ('interleave_size', 'provider_order')
@@ -99,10 +136,6 @@ class ReviewFilterSerializer(serializers.Serializer):
                 })
 
         if mode == 'interleave':
-            if not self.context.get('allow_interleave', True):
-                raise serializers.ValidationError({
-                    'mode': 'Interleaving is unavailable for one provider.'
-                })
             attrs.setdefault('interleave_size', 1)
 
         return attrs

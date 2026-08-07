@@ -251,6 +251,150 @@ def test_branch_reviews_support_rating_ordering(interleaving_context):
 
 @pytest.mark.django_db
 @pytest.mark.parametrize(
+    ('ordering', 'provider_review_indexes'),
+    (
+        ('rating', (3, 2, 1, 0)),
+        ('-rating', (0, 1, 2, 3)),
+    ),
+)
+def test_interleave_supports_rating_ordering(
+    interleaving_context,
+    ordering,
+    provider_review_indexes,
+):
+    client, branch, _ = interleaving_context
+
+    response = client.get(
+        reverse('branch-reviews', kwargs={'branch_id': branch.pk}),
+        {
+            'mode': 'interleave',
+            'ordering': ordering,
+            'interleave_size': 2,
+            'page_size': 100,
+        },
+    )
+
+    assert response.status_code == 200
+    expected_texts = []
+    for offset in range(0, 4, 2):
+        for provider in ('2gis', 'yandex', 'vlru'):
+            expected_texts.extend(
+                f'{provider}-{index}'
+                for index in provider_review_indexes[offset:offset + 2]
+            )
+
+    assert [item['text'] for item in response.data['results']] == expected_texts
+
+
+@pytest.mark.django_db
+def test_interleave_applies_date_range_before_ordering(interleaving_context):
+    client, branch, _ = interleaving_context
+
+    response = client.get(
+        reverse('branch-reviews', kwargs={'branch_id': branch.pk}),
+        {
+            'mode': 'interleave',
+            'date_from': '2026-07-31',
+            'date_to': '2026-08-01',
+            'page_size': 100,
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.data['count'] == 6
+    assert [item['text'] for item in response.data['results']] == [
+        '2gis-0',
+        'yandex-0',
+        'vlru-0',
+        '2gis-1',
+        'yandex-1',
+        'vlru-1',
+    ]
+
+
+@pytest.mark.django_db
+def test_interleave_applies_provider_filter(interleaving_context):
+    client, branch, _ = interleaving_context
+
+    response = client.get(
+        reverse('branch-reviews', kwargs={'branch_id': branch.pk}),
+        {
+            'mode': 'interleave',
+            'provider': 'yandex',
+            'provider_order': 'vlru,yandex',
+            'page_size': 100,
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.data['provider_order'] == ['yandex']
+    assert [item['text'] for item in response.data['results']] == [
+        'yandex-0',
+        'yandex-1',
+        'yandex-2',
+        'yandex-3',
+    ]
+    assert [item['provider'] for item in response.data['providers']] == [
+        'yandex',
+    ]
+
+
+@pytest.mark.django_db
+def test_interleave_groups_multiple_sources_of_the_same_provider(
+    interleaving_context,
+):
+    client, branch, _ = interleaving_context
+    second_twogis = BranchProvider.objects.create(
+        branch=branch,
+        provider='2gis',
+        source_url='https://2gis.ru/irkutsk/firm/456',
+    )
+    Review.objects.bulk_create([
+        Review(
+            provider=second_twogis,
+            author_name=f'Second 2gis author {index}',
+            text=f'second-2gis-{index}',
+            rating=5,
+            published_date=datetime(
+                2026,
+                7,
+                28 - index,
+                12,
+                0,
+                tzinfo=timezone.utc,
+            ),
+            external_review_id=f'second-2gis-{index}',
+            content_hash=f'{100 + index:064x}',
+        )
+        for index in range(2)
+    ])
+
+    response = client.get(
+        reverse('branch-reviews', kwargs={'branch_id': branch.pk}),
+        {
+            'mode': 'interleave',
+            'interleave_size': 2,
+            'page_size': 100,
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.data['provider_order'] == ['2gis', 'yandex', 'vlru']
+    assert [item['provider_name'] for item in response.data['results']] == [
+        '2gis', '2gis', 'yandex', 'yandex', 'vlru', 'vlru',
+        '2gis', '2gis', 'yandex', 'yandex', 'vlru', 'vlru',
+        '2gis', '2gis',
+    ]
+    assert [item['provider'] for item in response.data['providers']] == [
+        '2gis',
+        '2gis',
+        'yandex',
+        'vlru',
+    ]
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize(
     ('params', 'error_field'),
     (
         (
@@ -292,7 +436,22 @@ def test_branch_reviews_reject_invalid_interleave_parameters(
 
 
 @pytest.mark.django_db
-def test_branch_provider_reviews_reject_interleave_mode(interleaving_context):
+@pytest.mark.parametrize(
+    ('params', 'error_field'),
+    (
+        ({'mode': 'interleave'}, 'mode'),
+        ({'provider': 'yandex'}, 'provider'),
+        ({'provider_order': '2gis,yandex'}, 'provider_order'),
+        ({'interleave_size': 2}, 'interleave_size'),
+        ({'ordering': 'rating'}, 'ordering'),
+        ({'ordering': '-rating'}, 'ordering'),
+    ),
+)
+def test_branch_provider_reviews_reject_branch_only_parameters(
+    interleaving_context,
+    params,
+    error_field,
+):
     client, _, providers = interleaving_context
 
     response = client.get(
@@ -300,8 +459,41 @@ def test_branch_provider_reviews_reject_interleave_mode(interleaving_context):
             'branch-provider-reviews',
             kwargs={'branch_provider_id': providers['2gis'].pk},
         ),
-        {'mode': 'interleave'},
+        params,
     )
 
     assert response.status_code == 400
-    assert 'mode' in response.data
+    assert error_field in response.data
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize(
+    ('ordering', 'expected_texts'),
+    (
+        (
+            'published_date',
+            ['2gis-3', '2gis-2', '2gis-1', '2gis-0'],
+        ),
+        (
+            '-published_date',
+            ['2gis-0', '2gis-1', '2gis-2', '2gis-3'],
+        ),
+    ),
+)
+def test_branch_provider_reviews_support_date_ordering(
+    interleaving_context,
+    ordering,
+    expected_texts,
+):
+    client, _, providers = interleaving_context
+
+    response = client.get(
+        reverse(
+            'branch-provider-reviews',
+            kwargs={'branch_provider_id': providers['2gis'].pk},
+        ),
+        {'ordering': ordering, 'page_size': 100},
+    )
+
+    assert response.status_code == 200
+    assert [item['text'] for item in response.data['results']] == expected_texts

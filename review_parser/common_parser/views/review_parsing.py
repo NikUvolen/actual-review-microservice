@@ -11,7 +11,8 @@ from drf_yasg.utils import swagger_auto_schema
 
 from common_parser.models import Branch, Review, BranchProvider
 from common_parser.serializers import (
-    ReviewFilterSerializer,
+    BranchProviderReviewsFilterSerializer,
+    BranchReviewsFilterSerializer,
     ReviewSerializer,
     ParsingTaskStartSerializer, 
     ParsingTaskStatusSerializer,
@@ -73,6 +74,13 @@ ORDERING_PARAMETER = openapi.Parameter(
     type=openapi.TYPE_STRING,
     enum=['-published_date', 'published_date', '-rating', 'rating'],
 )
+DATE_ORDERING_PARAMETER = openapi.Parameter(
+    'ordering',
+    openapi.IN_QUERY,
+    description='Review ordering: -published_date or published_date.',
+    type=openapi.TYPE_STRING,
+    enum=['-published_date', 'published_date'],
+)
 INTERLEAVE_SIZE_PARAMETER = openapi.Parameter(
     'interleave_size',
     openapi.IN_QUERY,
@@ -98,11 +106,11 @@ class ReviewPagination(PageNumberPagination):
 class ReviewListMixin:
     pagination_class = ReviewPagination
     query_service = ReviewsQueryService()
+    filter_serializer_class = BranchReviewsFilterSerializer
 
-    def get_filters(self, request, *, allow_interleave: bool) -> dict:
-        filter_serializer = ReviewFilterSerializer(
+    def get_filters(self, request) -> dict:
+        filter_serializer = self.filter_serializer_class(
             data=request.query_params,
-            context={'allow_interleave': allow_interleave},
         )
         filter_serializer.is_valid(raise_exception=True)
         return filter_serializer.validated_data
@@ -159,11 +167,13 @@ class ParsingTaskStatusAPIView(APIView):
 
 
 class BranchProviderReviewsAPIView(ReviewListMixin, APIView):
+    filter_serializer_class = BranchProviderReviewsFilterSerializer
+
     @swagger_auto_schema(
         manual_parameters=[
             DATE_FROM_PARAMETER,
             DATE_TO_PARAMETER,
-            ORDERING_PARAMETER,
+            DATE_ORDERING_PARAMETER,
             PAGE_PARAMETER,
             PAGE_SIZE_PARAMETER,
         ]
@@ -186,7 +196,7 @@ class BranchProviderReviewsAPIView(ReviewListMixin, APIView):
             .prefetch_related("media")
         )
 
-        filters = self.get_filters(request, allow_interleave=False)
+        filters = self.get_filters(request)
         reviews, _ = self.query_service.build(
             reviews,
             filters,
@@ -207,6 +217,8 @@ class BranchProviderReviewsAPIView(ReviewListMixin, APIView):
 
 
 class BranchReviewsAPIView(ReviewListMixin, APIView):
+    filter_serializer_class = BranchReviewsFilterSerializer
+
     @swagger_auto_schema(
         manual_parameters=[
             PROVIDER_PARAMETER,
@@ -228,7 +240,7 @@ class BranchReviewsAPIView(ReviewListMixin, APIView):
             is_active=True,
         )
 
-        filters = self.get_filters(request, allow_interleave=True)
+        filters = self.get_filters(request)
 
         branch_providers_queryset = (
             BranchProvider.objects

@@ -1,20 +1,25 @@
+from collections import Counter
+
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import status
 from rest_framework.pagination import PageNumberPagination
 from django.shortcuts import get_object_or_404
+from django.db.models import Count
 from drf_yasg import openapi
 from drf_yasg.utils import swagger_auto_schema
 
 from common_parser.models import Branch, Review, BranchProvider
 from common_parser.serializers import (
-    ReviewFilterSerializer,
+    BranchProviderReviewsFilterSerializer,
+    BranchReviewsFilterSerializer,
     ReviewSerializer,
     ParsingTaskStartSerializer, 
     ParsingTaskStatusSerializer,
     BranchProviderSummarySerializer
 )
 from common_parser.services.parsing_orchestrator import ParsingOrchestrator
+from common_parser.services.reviews_query import ReviewsQueryService
 from common_parser.api_settings import (
     DEFAULT_REVIEW_PAGE_SIZE,
     MAX_REVIEW_PAGE_SIZE,
@@ -53,6 +58,43 @@ PAGE_SIZE_PARAMETER = openapi.Parameter(
     description='Reviews per page (maximum 100).',
     type=openapi.TYPE_INTEGER,
 )
+MODE_PARAMETER = openapi.Parameter(
+    'mode',
+    openapi.IN_QUERY,
+    description='Result mode: standard or interleave.',
+    type=openapi.TYPE_STRING,
+    enum=['standard', 'interleave'],
+)
+ORDERING_PARAMETER = openapi.Parameter(
+    'ordering',
+    openapi.IN_QUERY,
+    description=(
+        'Review ordering: -published_date, published_date, -rating or rating.'
+    ),
+    type=openapi.TYPE_STRING,
+    enum=['-published_date', 'published_date', '-rating', 'rating'],
+)
+DATE_ORDERING_PARAMETER = openapi.Parameter(
+    'ordering',
+    openapi.IN_QUERY,
+    description='Review ordering: -published_date or published_date.',
+    type=openapi.TYPE_STRING,
+    enum=['-published_date', 'published_date'],
+)
+INTERLEAVE_SIZE_PARAMETER = openapi.Parameter(
+    'interleave_size',
+    openapi.IN_QUERY,
+    description='Consecutive reviews per provider in interleave mode (1-100).',
+    type=openapi.TYPE_INTEGER,
+    minimum=1,
+    maximum=100,
+)
+PROVIDER_ORDER_PARAMETER = openapi.Parameter(
+    'provider_order',
+    openapi.IN_QUERY,
+    description='Preferred provider order separated by commas.',
+    type=openapi.TYPE_STRING,
+)
 
 
 class ReviewPagination(PageNumberPagination):
@@ -63,26 +105,21 @@ class ReviewPagination(PageNumberPagination):
 
 class ReviewListMixin:
     pagination_class = ReviewPagination
+    query_service = ReviewsQueryService()
+    filter_serializer_class = BranchReviewsFilterSerializer
 
-    def get_filtered_reviews(self, request, queryset):
-        filter_serializer = ReviewFilterSerializer(data=request.query_params)
+    def get_filters(self, request) -> dict:
+        filter_serializer = self.filter_serializer_class(
+            data=request.query_params,
+        )
         filter_serializer.is_valid(raise_exception=True)
-        filters = filter_serializer.validated_data
-
-        if provider := filters.get('provider'):
-            queryset = queryset.filter(provider__provider=provider)
-        if date_from := filters.get('date_from'):
-            queryset = queryset.filter(published_date__date__gte=date_from)
-        if date_to := filters.get('date_to'):
-            queryset = queryset.filter(published_date__date__lte=date_to)
-
-        return queryset
+        return filter_serializer.validated_data
 
     def get_paginated_response(self, request, queryset):
         paginator = self.pagination_class()
         page = paginator.paginate_queryset(queryset, request, view=self)
         serializer = ReviewSerializer(page, many=True)
-        return paginator.get_paginated_response(serializer.data)
+        return paginator.get_paginated_response(serializer.data), page
 
 
 # Получить BranchProvider по id
@@ -130,43 +167,58 @@ class ParsingTaskStatusAPIView(APIView):
 
 
 class BranchProviderReviewsAPIView(ReviewListMixin, APIView):
+    filter_serializer_class = BranchProviderReviewsFilterSerializer
+
     @swagger_auto_schema(
         manual_parameters=[
             DATE_FROM_PARAMETER,
             DATE_TO_PARAMETER,
+            DATE_ORDERING_PARAMETER,
             PAGE_PARAMETER,
             PAGE_SIZE_PARAMETER,
         ]
     )
     def get(self, request, branch_provider_id: int):
         branch_provider = get_object_or_404(
-            BranchProvider, 
+            BranchProvider.objects.annotate(
+                stored_review_count=Count('reviews')
+            ),
             pk=branch_provider_id,
             branch__organization__user=request.user,
             branch__is_active=True,
             is_active=True,
         )
 
-        provider_data = BranchProviderSummarySerializer(
-            branch_provider, many=False
-        ).data
-
         reviews = (
             Review.objects
             .filter(provider=branch_provider)
             .select_related('provider')
             .prefetch_related("media")
-            .order_by("-published_date")
         )
 
-        reviews = self.get_filtered_reviews(request, reviews)
-        response = self.get_paginated_response(request, reviews)
+        filters = self.get_filters(request)
+        reviews, _ = self.query_service.build(
+            reviews,
+            filters,
+            [branch_provider.provider],
+        )
+        response, page = self.get_paginated_response(request, reviews)
+        returned_counts = Counter(review.provider_id for review in page)
+        provider_data = BranchProviderSummarySerializer(
+            branch_provider,
+            context={'returned_counts': returned_counts},
+        ).data
+
         response.data['provider'] = provider_data
+        response.data['mode'] = filters['mode']
+        response.data['ordering'] = filters['ordering']
 
         return response
 
 
 class BranchReviewsAPIView(ReviewListMixin, APIView):
+    filter_serializer_class = BranchReviewsFilterSerializer
+
     @swagger_auto_schema(
         manual_parameters=[
             PROVIDER_PARAMETER,
@@ -174,6 +226,10 @@ class BranchReviewsAPIView(ReviewListMixin, APIView):
             DATE_TO_PARAMETER,
             PAGE_PARAMETER,
             PAGE_SIZE_PARAMETER,
+            MODE_PARAMETER,
+            ORDERING_PARAMETER,
+            INTERLEAVE_SIZE_PARAMETER,
+            PROVIDER_ORDER_PARAMETER,
         ]
     )
     def get(self, request, branch_id: int):
@@ -184,26 +240,60 @@ class BranchReviewsAPIView(ReviewListMixin, APIView):
             is_active=True,
         )
 
-        branch_providers = (
+        filters = self.get_filters(request)
+
+        branch_providers_queryset = (
             BranchProvider.objects
             .filter(branch=branch, is_active=True)
             .select_related('stats')
-            .order_by('provider', 'pk')
+            .annotate(stored_review_count=Count('reviews'))
         )
-        providers_data = BranchProviderSummarySerializer(
-            branch_providers, many=True
-        ).data
+        if provider := filters.get('provider'):
+            branch_providers_queryset = branch_providers_queryset.filter(
+                provider=provider
+            )
+        branch_providers = list(branch_providers_queryset)
+        available_providers = [
+            branch_provider.provider
+            for branch_provider in branch_providers
+        ]
 
         reviews = (
             Review.objects
-            .filter(provider__branch=branch)
+            .filter(provider__branch=branch, provider__is_active=True)
             .select_related('provider')
             .prefetch_related('media')
-            .order_by('-published_date', '-pk')
         )
 
-        reviews = self.get_filtered_reviews(request, reviews)
-        response = self.get_paginated_response(request, reviews)
+        reviews, provider_order = self.query_service.build(
+            reviews,
+            filters,
+            available_providers,
+        )
+        response, page = self.get_paginated_response(request, reviews)
+
+        provider_positions = {
+            provider: position
+            for position, provider in enumerate(provider_order)
+        }
+        branch_providers.sort(
+            key=lambda item: (
+                provider_positions.get(item.provider, len(provider_positions)),
+                item.pk,
+            )
+        )
+        returned_counts = Counter(review.provider_id for review in page)
+        providers_data = BranchProviderSummarySerializer(
+            branch_providers,
+            many=True,
+            context={'returned_counts': returned_counts},
+        ).data
+
         response.data['providers'] = providers_data
+        response.data['mode'] = filters['mode']
+        response.data['ordering'] = filters['ordering']
+        if filters['mode'] == 'interleave':
+            response.data['interleave_size'] = filters['interleave_size']
+            response.data['provider_order'] = provider_order
 
         return response
